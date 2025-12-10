@@ -1,0 +1,11 @@
+---
+alwaysApply: true
+---
+
+# Global Project Rules
+1. You must write code following clean code principles.
+2. You must follow SOLID principles during development.
+3. Before creating a new file or writing a method, check if similar code already exists.
+4. Do not delete files directly. Make sure to get approval from a developer and proceed in a suggestive manner. Directly deleting files yourself can damage the architecture.
+5. Do not write unnecessary comments. After writing code, explain the changes via chat if needed.
+6. Communication should follow RESTful principles. Please ensure that URLs, URIs, and methods are constructed in accordance with RESTful conventions.

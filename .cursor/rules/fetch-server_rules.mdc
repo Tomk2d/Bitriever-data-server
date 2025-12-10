@@ -1,0 +1,10 @@
+---
+globs: fetch-server
+alwaysApply: false
+---
+## Error and Exception Handling
+1. Error and exception handling should be performed at the controller level. At the service or repository level, exceptions should be thrown using `throw`.
+2. Errors and exceptions should be managed globally. Manage them in the global section to ensure consistent handling.
+3. When an error or exception occurs, make sure the log records the name of the method where it occurred.
+4. Log only when an exception or error occurs.
+5. Manage API documentation using Swagger. For POST requests, provide example values in the DTOs for Swagger documentation.
