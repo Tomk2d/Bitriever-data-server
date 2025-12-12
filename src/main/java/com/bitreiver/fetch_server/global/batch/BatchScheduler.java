@@ -17,7 +17,7 @@ public class BatchScheduler {
     private final Job fetchRecentFearGreedDataJob;
     
     public BatchScheduler(
-            JobLauncher jobLauncher,
+            @Qualifier("asyncJobLauncher") JobLauncher jobLauncher,
             @Qualifier("fetchRecentFearGreedDataJob") Job fetchRecentFearGreedDataJob) {
         this.jobLauncher = jobLauncher;
         this.fetchRecentFearGreedDataJob = fetchRecentFearGreedDataJob;
