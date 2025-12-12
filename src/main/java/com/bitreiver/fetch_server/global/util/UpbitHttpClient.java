@@ -2,8 +2,8 @@ package com.bitreiver.fetch_server.global.util;
 
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
@@ -20,7 +20,6 @@ import java.util.*;
 
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class UpbitHttpClient {
     
     private final WebClient upbitWebClient;
@@ -28,18 +27,21 @@ public class UpbitHttpClient {
     @Value("${external.upbit.api.url:https://api.upbit.com}")
     private String baseUrl;
     
+    public UpbitHttpClient(@Qualifier("upbitWebClient") WebClient upbitWebClient) {
+        this.upbitWebClient = upbitWebClient;
+    }
+    
     public Mono<Object> get(String endpoint, String accessKey, String secretKey, Map<String, Object> params, boolean requireAuth) {
         try {
             WebClient.RequestHeadersSpec<?> requestSpec;
             
             if (requireAuth) {
-                // Python 코드처럼 쿼리 스트링을 직접 생성 (인코딩 없이)
                 String queryStringForJwt = buildQueryString(params);
                 
                 // JWT 토큰 생성
                 String jwtToken = createJwtToken(accessKey, secretKey, queryStringForJwt);
                 
-                // 실제 HTTP 요청 URL 생성 (Python의 requests.get()과 동일하게)
+                // 실제 HTTP 요청 URL 생성 
                 // 쿼리 스트링을 각 파라미터별로 URL 인코딩하여 구성
                 StringBuilder urlBuilder = new StringBuilder(baseUrl + endpoint);
                 if (params != null && !params.isEmpty()) {

@@ -7,8 +7,8 @@ import com.bitreiver.fetch_server.domain.feargreed.repository.FearGreedIndexRepo
 import com.bitreiver.fetch_server.global.common.exception.CustomException;
 import com.bitreiver.fetch_server.global.common.exception.ErrorCode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -23,11 +23,17 @@ import java.util.Map;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class FearGreedServiceImpl implements FearGreedService {
     
     private final WebClient alternativeMeWebClient;
     private final FearGreedIndexRepository fearGreedIndexRepository;
+    
+    public FearGreedServiceImpl(
+            @Qualifier("alternativeMeWebClient") WebClient alternativeMeWebClient,
+            FearGreedIndexRepository fearGreedIndexRepository) {
+        this.alternativeMeWebClient = alternativeMeWebClient;
+        this.fearGreedIndexRepository = fearGreedIndexRepository;
+    }
     
     private static final DateTimeFormatter DATE_FORMATTER = 
         DateTimeFormatter.ofPattern("d MMM, yyyy", Locale.ENGLISH);
