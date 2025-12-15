@@ -47,6 +47,9 @@ dependencies {
 
 	// WebClient (비동기 HTTP 클라이언트)
     implementation 'org.springframework.boot:spring-boot-starter-webflux'
+
+	// Redis
+    implementation 'org.springframework.boot:spring-boot-starter-data-redis'
 	
 	compileOnly 'org.projectlombok:lombok'
 	runtimeOnly 'org.postgresql:postgresql'
