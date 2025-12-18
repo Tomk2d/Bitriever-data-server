@@ -7,6 +7,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -38,6 +39,21 @@ public class GlobalExceptionHandler {
         ApiResponse.ErrorDetail errorDetail = ApiResponse.ErrorDetail.builder()
             .code(ErrorCode.BAD_REQUEST.getCode())
             .message(message)
+            .build();
+            
+        return ResponseEntity
+            .status(ErrorCode.BAD_REQUEST.getHttpStatus())
+            .body(ApiResponse.error(errorDetail));
+    }
+    
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    protected ResponseEntity<ApiResponse<?>> handleMissingParameterException(MissingServletRequestParameterException e) {
+        String message = String.format("필수 파라미터 '%s'가 누락되었습니다.", e.getParameterName());
+        
+        ApiResponse.ErrorDetail errorDetail = ApiResponse.ErrorDetail.builder()
+            .code(ErrorCode.BAD_REQUEST.getCode())
+            .message(message)
+            .field(e.getParameterName())
             .build();
             
         return ResponseEntity

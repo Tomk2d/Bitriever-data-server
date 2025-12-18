@@ -13,5 +13,6 @@ public interface CoinRepository extends JpaRepository<Coin, Integer> {
     Optional<Coin> findBySymbolAndQuoteCurrency(String symbol, String quoteCurrency);
     List<Coin> findByMarketCodeIn(List<String> marketCodes);
     List<Coin> findByExchange(String exchange);
+    List<Coin> findByIsActiveTrue();
 }
 
