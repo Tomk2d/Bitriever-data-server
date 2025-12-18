@@ -12,6 +12,8 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.fasterxml.jackson.databind.SerializationFeature;
 
 @Configuration
 public class RedisConfig {
@@ -92,8 +94,15 @@ public class RedisConfig {
         return new StringRedisTemplate(redisReplicaConnectionFactory);
     }
 
-    @Bean
-    public ObjectMapper objectMapper() {
-        return new ObjectMapper();
+    /**
+     * Redis용 ObjectMapper (WebClient 등에서 사용)
+     * Spring MVC는 JacksonConfig의 @Primary ObjectMapper를 사용
+     */
+    @Bean(name = "redisObjectMapper")
+    public ObjectMapper redisObjectMapper() {
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.registerModule(new JavaTimeModule());
+        mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        return mapper;
     }
 }
