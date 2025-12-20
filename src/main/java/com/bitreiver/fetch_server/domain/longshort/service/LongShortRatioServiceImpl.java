@@ -2,6 +2,7 @@ package com.bitreiver.fetch_server.domain.longshort.service;
 
 import com.bitreiver.fetch_server.domain.coin.entity.Coin;
 import com.bitreiver.fetch_server.domain.coin.repository.CoinRepository;
+import com.bitreiver.fetch_server.global.cache.RedisCacheService;
 import com.bitreiver.fetch_server.infra.binance.BinanceFuturesClient;
 import com.bitreiver.fetch_server.infra.binance.dto.BinanceLongShortRatioResponse;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +22,9 @@ public class LongShortRatioServiceImpl implements LongShortRatioService {
     
     private final CoinRepository coinRepository;
     private final BinanceFuturesClient binanceFuturesClient;
+    private final RedisCacheService redisCacheService;
+    
+    private static final String REDIS_KEY_PREFIX = "binance:longShortRatio:";
     
     @Override
     public Map<String, Object> fetchAll(String period, Long limit) {
@@ -108,6 +112,35 @@ public class LongShortRatioServiceImpl implements LongShortRatioService {
             resultData.size(), unsupportedSymbols.size());
         
         return response;
+    }
+    
+    @Override
+    public void fetchAllAndSaveToRedis(String period, Long limit) {
+        Map<String, Object> result = fetchAll(period, limit);
+        
+        long ttlSeconds = switch (period) {
+            case "1h" -> 3600L;
+            case "4h" -> 4 * 3600L;
+            case "12h" -> 12 * 3600L;
+            case "1d" -> 24 * 3600L;
+            default -> 3600L;
+        } + 600L;
+        
+        @SuppressWarnings("unchecked")
+        Map<String, List<BinanceLongShortRatioResponse>> data =
+                (Map<String, List<BinanceLongShortRatioResponse>>) result.get("data");
+        
+        if (data == null || data.isEmpty()) {
+            log.warn("Binance Long/Short Ratio 데이터가 비어 있습니다. period: {}", period);
+            return;
+        }
+        
+        data.forEach((symbol, ratios) -> {
+            String redisKey = REDIS_KEY_PREFIX + symbol + ":" + period;
+            redisCacheService.set(redisKey, ratios, ttlSeconds);
+            log.info("Binance Long/Short Ratio Redis 저장 완료 - key: {}, size: {}, ttl: {}초",
+                    redisKey, ratios.size(), ttlSeconds);
+        });
     }
 }
 

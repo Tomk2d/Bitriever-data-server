@@ -7,6 +7,9 @@ import java.util.Map;
 
 public interface FearGreedService {
     FearGreedApiResponse getByDate(LocalDate date);
-    void fetchRecentData();
     Map<String, Object> fetchAndSaveAllHistory();
+
+    void fetchRecentDataAndSaveToRedis();
+    void fetchYesterdayDataAndSaveToRedis();
+    void saveAllHistoryToRedis();
 }

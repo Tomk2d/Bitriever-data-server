@@ -16,14 +16,17 @@ public class BatchScheduler {
     
     private final JobLauncher jobLauncher;
     private final Job fetchRecentFearGreedDataJob;
+    private final Job fetchYesterdayFearGreedDataJob;
     private final Job binanceLongShortRatioJob;
     
     public BatchScheduler(
             @Qualifier("asyncJobLauncher") JobLauncher jobLauncher,
             @Qualifier("fetchRecentFearGreedDataJob") Job fetchRecentFearGreedDataJob,
+            @Qualifier("fetchYesterdayFearGreedDataJob") Job fetchYesterdayFearGreedDataJob,
             @Qualifier("binanceLongShortRatioJob") Job binanceLongShortRatioJob) {
         this.jobLauncher = jobLauncher;
         this.fetchRecentFearGreedDataJob = fetchRecentFearGreedDataJob;
+        this.fetchYesterdayFearGreedDataJob = fetchYesterdayFearGreedDataJob;
         this.binanceLongShortRatioJob = binanceLongShortRatioJob;
     }
     
@@ -42,6 +45,23 @@ public class BatchScheduler {
                         
         } catch (Exception e) {
             log.error("공포/탐욕 지수 최근 데이터 조회 배치 작업 실행 실패: {}", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 공포/탐욕 지수 어제 데이터 조회 배치
+     * UTC 9시 03분마다 실행
+     */
+    @Scheduled(cron = "0 3 9 * * *")
+    public void scheduleFetchYesterdayFearGreedData() {
+        try {
+            JobParameters jobParameters = new JobParametersBuilder()
+                .addLong("timestamp", System.currentTimeMillis())
+                .toJobParameters();
+            
+            jobLauncher.run(fetchYesterdayFearGreedDataJob, jobParameters);
+        } catch (Exception e) {
+            log.error("공포/탐욕 지수 어제 데이터 조회 배치 작업 실행 실패: {}", e.getMessage(), e);
         }
     }
 

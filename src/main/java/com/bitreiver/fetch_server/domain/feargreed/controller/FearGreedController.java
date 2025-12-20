@@ -52,24 +52,5 @@ public class FearGreedController {
         );
     }
     
-    @Operation(
-        summary = "공포/탐욕 지수 최근 데이터 조회 (테스트용)", 
-        description = "alternative.me API에서 최근 7일 공포/탐욕 지수 데이터를 조회합니다. 로그만 출력하고 DB에는 저장하지 않습니다."
-    )
-    @ApiResponses(value = {
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(
-            responseCode = "200", 
-            description = "데이터 조회 성공"
-        ),
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(
-            responseCode = "500", 
-            description = "서버 내부 오류"
-        )
-    })
-    @PostMapping("/fetch-recent")
-    public ApiResponse<Void> fetchRecentFearGreedData() {
-        fearGreedService.fetchRecentData();
-        return ApiResponse.success(null, "공포/탐욕 지수 최근 데이터 조회가 완료되었습니다.");
-    }
 }
 
