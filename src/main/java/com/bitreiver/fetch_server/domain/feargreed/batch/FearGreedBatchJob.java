@@ -30,7 +30,7 @@ public class FearGreedBatchJob {
     @Bean
     public Tasklet fetchRecentFearGreedDataTasklet() {
         return (contribution, chunkContext) -> {
-            fearGreedService.fetchRecentData();
+            fearGreedService.fetchRecentDataAndSaveToRedis();
             return RepeatStatus.FINISHED;
         };
     }
@@ -52,6 +52,37 @@ public class FearGreedBatchJob {
     public Job fetchRecentFearGreedDataJob() {
         return new JobBuilder("fetchRecentFearGreedDataJob", jobRepository)
             .start(fetchRecentFearGreedDataStep())
+            .build();
+    }
+
+    /**
+     * 공포/탐욕 지수 어제 데이터 조회 Tasklet
+     */
+    @Bean
+    public Tasklet fetchYesterdayFearGreedDataTasklet() {
+        return (contribution, chunkContext) -> {
+            fearGreedService.fetchYesterdayDataAndSaveToRedis();
+            return RepeatStatus.FINISHED;
+        };
+    }
+
+    /**
+     * 공포/탐욕 지수 어제 데이터 조회 Step
+     */
+    @Bean
+    public Step fetchYesterdayFearGreedDataStep() {
+        return new StepBuilder("fetchYesterdayFearGreedDataStep", jobRepository)
+            .tasklet(fetchYesterdayFearGreedDataTasklet(), transactionManager)
+            .build();
+    }
+
+    /**
+     * 공포/탐욕 지수 어제 데이터 조회 Job
+     */
+    @Bean
+    public Job fetchYesterdayFearGreedDataJob() {
+        return new JobBuilder("fetchYesterdayFearGreedDataJob", jobRepository)
+            .start(fetchYesterdayFearGreedDataStep())
             .build();
     }
 }

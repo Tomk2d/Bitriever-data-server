@@ -33,7 +33,28 @@ class BinanceLongShortBatchTestControllerTest {
         mockMvc.perform(
                         post("/test/batch/binance/long-short-ratio")
                                 .param("period", "1h")
-                                .param("limit", "10")
+                                .param("limit", "30")
+                )
+                .andExpect(status().isOk());
+        
+        mockMvc.perform(
+                    post("/test/batch/binance/long-short-ratio")
+                        .param("period", "4h")
+                        .param("limit", "30")
+                )
+                .andExpect(status().isOk());
+
+        mockMvc.perform(
+                    post("/test/batch/binance/long-short-ratio")
+                        .param("period", "12h")
+                        .param("limit", "30")
+                )
+                .andExpect(status().isOk());
+
+        mockMvc.perform(
+                    post("/test/batch/binance/long-short-ratio")
+                        .param("period", "1d")
+                        .param("limit", "30")
                 )
                 .andExpect(status().isOk());
     }
