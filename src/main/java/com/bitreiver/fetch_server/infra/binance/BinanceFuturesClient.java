@@ -34,7 +34,7 @@ public class BinanceFuturesClient {
             Long limit) {
         
         UriComponentsBuilder uriBuilder = UriComponentsBuilder
-            .fromPath("/futures/data/globalLongShortAccountRatio")
+            .fromPath("/futures/data/topLongShortPositionRatio")
             .queryParam("symbol", symbol)
             .queryParam("period", period);
         

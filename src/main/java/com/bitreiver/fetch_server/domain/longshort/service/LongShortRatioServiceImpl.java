@@ -98,7 +98,6 @@ public class LongShortRatioServiceImpl implements LongShortRatioService {
         
         // 5. 미지원 심볼 로그 출력
         if (!unsupportedSymbols.isEmpty()) {
-            log.warn("Binance Long/Short Ratio API에서 지원하지 않는 심볼 목록: {}", unsupportedSymbols);
         } else {
             log.info("모든 심볼이 정상적으로 조회되었습니다.");
         }
@@ -138,8 +137,6 @@ public class LongShortRatioServiceImpl implements LongShortRatioService {
         data.forEach((symbol, ratios) -> {
             String redisKey = REDIS_KEY_PREFIX + symbol + ":" + period;
             redisCacheService.set(redisKey, ratios, ttlSeconds);
-            log.info("Binance Long/Short Ratio Redis 저장 완료 - key: {}, size: {}, ttl: {}초",
-                    redisKey, ratios.size(), ttlSeconds);
         });
     }
 }

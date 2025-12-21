@@ -87,33 +87,33 @@ public class BatchScheduler {
 
     /**
      * 1시간마다 period=1h 실행
-     * 매 정시: 0분 0초
+     * 매 정시: 1분 0초
      */
-    @Scheduled(cron = "0 0 * * * *")
+    @Scheduled(cron = "0 7 * * * *")
     public void scheduleBinanceLongShort1h() {
         runBinanceLongShortJob("1h", 30L);
     }
 
     /**
-     * 4시간마다 period=4h 실행 (0시10분, 4시10분, 8시10분, 12시10분, 16시10분, 20시10분)
+     * 4시간마다 period=4h 실행 (0시7분, 4시7분, 8시7분, 12시7분, 16시7분, 20시7분)
      */
-    @Scheduled(cron = "0 10 */4 * * *")
+    @Scheduled(cron = "0 7 */4 * * *")
     public void scheduleBinanceLongShort4h() {
         runBinanceLongShortJob("4h", 30L);
     }
 
     /**
-     * 12시간마다 period=12h 실행 (0시20분, 12시20분)
+     * 12시간마다 period=12h 실행 (0시7분, 12시7분)
      */
-    @Scheduled(cron = "0 20 */12 * * *")
+    @Scheduled(cron = "0 7 */12 * * *")
     public void scheduleBinanceLongShort12h() {
         runBinanceLongShortJob("12h", 30L);
     }
 
     /**
-     * 하루마다 period=1d 실행 (매일 0시)
+     * 하루마다 period=1d 실행 (매일 0시 1분)
      */
-    @Scheduled(cron = "0 0 0 * * *")
+    @Scheduled(cron = "0 1 0 * * *")
     public void scheduleBinanceLongShort1d() {
         runBinanceLongShortJob("1d", 30L);
     }
