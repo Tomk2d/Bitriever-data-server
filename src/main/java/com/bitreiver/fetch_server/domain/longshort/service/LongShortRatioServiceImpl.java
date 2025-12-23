@@ -49,7 +49,7 @@ public class LongShortRatioServiceImpl implements LongShortRatioService {
                 return CompletableFuture.runAsync(() -> {
                     try {
                         List<BinanceLongShortRatioResponse> response = binanceFuturesClient
-                            .getGlobalLongShortAccountRatio(symbolWithQuote, period, limit)
+                            .getTopLongShortPositionRatio(symbolWithQuote, period, limit)
                             .block();
                         
                         if (response != null && !response.isEmpty()) {

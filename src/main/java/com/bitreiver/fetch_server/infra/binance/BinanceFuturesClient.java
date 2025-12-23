@@ -21,14 +21,14 @@ public class BinanceFuturesClient {
     }
     
     /**
-     * Binance USDⓈ-M Futures Long/Short Account Ratio 조회
+     * Binance USDⓈ-M Futures Top Trader Long/Short Position Ratio 조회
      * 
      * @param symbol 심볼 (예: BTCUSDT)
      * @param period 기간 ("5m","15m","30m","1h","2h","4h","6h","12h","1d")
      * @param limit 제한 (기본값 30, 최대 500)
      * @return Long/Short Ratio 응답 리스트
      */
-    public Mono<List<BinanceLongShortRatioResponse>> getGlobalLongShortAccountRatio(
+    public Mono<List<BinanceLongShortRatioResponse>> getTopLongShortPositionRatio(
             String symbol, 
             String period, 
             Long limit) {
