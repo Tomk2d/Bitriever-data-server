@@ -14,14 +14,6 @@ import static org.junit.jupiter.api.Assertions.*;
 
 @SpringBootTest
 @ActiveProfiles("test")
-@TestPropertySource(properties = {
-    "external.upbit.api.url=https://api.upbit.com",
-    "spring.data.redis.host=localhost",
-    "spring.data.redis.port=6379",
-    "spring.data.redis.password=bitriever0320",
-    "spring.data.redis.replica.host=localhost",
-    "spring.data.redis.replica.port=6379"
-})
 class UpbitClientTest {
 
     @Autowired
