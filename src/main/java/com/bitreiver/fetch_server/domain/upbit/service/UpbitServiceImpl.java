@@ -3,7 +3,7 @@ package com.bitreiver.fetch_server.domain.upbit.service;
 import com.bitreiver.fetch_server.global.common.exception.CustomException;
 import com.bitreiver.fetch_server.global.common.exception.ErrorCode;
 import com.bitreiver.fetch_server.global.util.TimeUtil;
-import com.bitreiver.fetch_server.global.util.UpbitHttpClient;
+import com.bitreiver.fetch_server.infra.upbit.UpbitClient;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,7 +22,7 @@ import java.util.*;
 @RequiredArgsConstructor
 public class UpbitServiceImpl implements UpbitService {
     
-    private final UpbitHttpClient upbitHttpClient;
+    private final UpbitClient upbitClient;
     private final ObjectMapper objectMapper;
     
     @Override
@@ -46,7 +46,7 @@ public class UpbitServiceImpl implements UpbitService {
                 params.put("limit", 1000);
 
                 
-                Object response = upbitHttpClient.get("/v1/orders/closed", accessKey, secretKey, params, true)
+                Object response = upbitClient.get("/v1/orders/closed", accessKey, secretKey, params, true)
                     .block();
                 
                 if (response == null) {
@@ -106,7 +106,7 @@ public class UpbitServiceImpl implements UpbitService {
                 Map<String, Object> params = new HashMap<>();
                 params.put("uuid", uuid);
                 
-                Object response = upbitHttpClient.get("/v1/order", accessKey, secretKey, params, true)
+                Object response = upbitClient.get("/v1/order", accessKey, secretKey, params, true)
                     .block();
                 
                 if (response != null && response instanceof Map) {
@@ -224,7 +224,7 @@ public class UpbitServiceImpl implements UpbitService {
     @Override
     public Mono<List<Map<String, Object>>> fetchAccounts(String accessKey, String secretKey) {
         try {
-            Object response = upbitHttpClient.get("/v1/accounts", accessKey, secretKey, null, true)
+            Object response = upbitClient.get("/v1/accounts", accessKey, secretKey, null, true)
                 .block();
             
             if (response == null) {

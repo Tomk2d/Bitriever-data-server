@@ -1,4 +1,4 @@
-package com.bitreiver.fetch_server.global.util;
+package com.bitreiver.fetch_server.infra.upbit;
 
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -20,14 +20,14 @@ import java.util.*;
 
 @Slf4j
 @Component
-public class UpbitHttpClient {
+public class UpbitClient {
     
     private final WebClient upbitWebClient;
     
     @Value("${external.upbit.api.url:https://api.upbit.com}")
     private String baseUrl;
     
-    public UpbitHttpClient(@Qualifier("upbitWebClient") WebClient upbitWebClient) {
+    public UpbitClient(@Qualifier("upbitWebClient") WebClient upbitWebClient) {
         this.upbitWebClient = upbitWebClient;
     }
     
@@ -95,7 +95,7 @@ public class UpbitHttpClient {
                 .doOnError(error -> log.error("Upbit API 요청 실패: {}", error.getMessage()));
                 
         } catch (Exception e) {
-            log.error("UpbitHttpClient GET 요청 중 에러 발생: {}", e.getMessage(), e);
+            log.error("UpbitClient GET 요청 중 에러 발생: {}", e.getMessage(), e);
             return Mono.error(e);
         }
     }
