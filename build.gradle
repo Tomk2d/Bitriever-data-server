@@ -50,6 +50,9 @@ dependencies {
 
 	// Redis
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+
+	// Jsoup (HTML 파싱)
+    implementation 'org.jsoup:jsoup:1.17.2'
 	
 	compileOnly 'org.projectlombok:lombok'
 	runtimeOnly 'org.postgresql:postgresql'
