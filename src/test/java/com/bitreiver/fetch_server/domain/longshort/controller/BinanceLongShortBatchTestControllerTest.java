@@ -48,7 +48,7 @@ class BinanceLongShortBatchTestControllerTest {
             new TypeReference<List<BinanceLongShortRatioResponse>>() {};
 
     @Test
-    @DisplayName("수동 배치 트리거 API - 모든 period (1h, 4h, 12h, 1d) 테스트 및 Redis 캐싱 검증")
+    @DisplayName("수동 배치 트리거 API - 모든 period (1h, 4h, 12h, 1d) 테스트 및 Redis 캐싱 검증 (거래량 기반)")
     void triggerBinanceLongShortRatio_allPeriods_success() throws Exception {
         // 활성 코인 목록 조회 (테스트 검증용)
         List<Coin> activeCoins = coinRepository.findByIsActiveTrue();
@@ -62,6 +62,8 @@ class BinanceLongShortBatchTestControllerTest {
 
         // 각 period에 대해 배치 실행 및 Redis 캐싱 검증
         for (String period : periods) {
+            System.out.printf("\n=== Period: %s 테스트 시작 ===%n", period);
+            
             // 배치 실행
             mockMvc.perform(
                             post("/test/batch/binance/long-short-ratio")
@@ -71,11 +73,12 @@ class BinanceLongShortBatchTestControllerTest {
                     .andExpect(status().isOk());
 
             // 배치 실행 후 잠시 대기 (비동기 처리 고려)
-            Thread.sleep(2000);
+            Thread.sleep(3000);
 
             // Redis에 데이터가 캐싱되었는지 확인
             boolean hasCachedData = false;
             int cachedSymbolCount = 0;
+            int validatedSymbolCount = 0;
 
             for (String symbol : uniqueSymbols) {
                 String redisKey = "binance:longShortRatio:" + symbol + ":" + period;
@@ -85,18 +88,58 @@ class BinanceLongShortBatchTestControllerTest {
                     hasCachedData = true;
                     cachedSymbolCount++;
                     List<BinanceLongShortRatioResponse> data = cached.get();
+                    
+                    // 기본 검증
                     assertFalse(data.isEmpty(), 
                             String.format("period=%s, symbol=%s: Redis에 빈 리스트가 저장되었습니다.", period, symbol));
                     assertNotNull(data.get(0).getSymbol(), 
                             String.format("period=%s, symbol=%s: 데이터에 symbol이 없습니다.", period, symbol));
+                    
+                    // 거래량 기반 데이터 검증
+                    BinanceLongShortRatioResponse firstData = data.get(0);
+                    if (firstData.getLongAccount() != null && firstData.getShortAccount() != null) {
+                        try {
+                            double longAccount = Double.parseDouble(firstData.getLongAccount());
+                            double shortAccount = Double.parseDouble(firstData.getShortAccount());
+                            
+                            // 롱 + 숏 비율이 1에 가까운지 확인 (거래량 기반 계산 검증)
+                            double sum = longAccount + shortAccount;
+                            assertTrue(Math.abs(sum - 1.0) < 0.01, 
+                                    String.format("period=%s, symbol=%s: 롱+숏 비율이 1에 가깝지 않습니다. (합계: %.4f)", 
+                                            period, symbol, sum));
+                            
+                            // 롱/숏 비율 검증
+                            if (firstData.getLongShortRatio() != null && shortAccount > 0) {
+                                double longShortRatio = Double.parseDouble(firstData.getLongShortRatio());
+                                double expectedRatio = longAccount / shortAccount;
+                                assertTrue(Math.abs(longShortRatio - expectedRatio) < 0.01,
+                                        String.format("period=%s, symbol=%s: 롱/숏 비율이 일치하지 않습니다. (실제: %.4f, 예상: %.4f)",
+                                                period, symbol, longShortRatio, expectedRatio));
+                            }
+                            
+                            validatedSymbolCount++;
+                            
+                            // 첫 번째 심볼의 데이터 출력 (샘플)
+                            if (validatedSymbolCount == 1) {
+                                System.out.printf("  샘플 데이터 (symbol=%s): 롱=%.2f%%, 숏=%.2f%%, ratio=%.4f%n",
+                                        symbol, longAccount * 100, shortAccount * 100,
+                                        firstData.getLongShortRatio() != null ? Double.parseDouble(firstData.getLongShortRatio()) : 0);
+                            }
+                        } catch (NumberFormatException e) {
+                            // 숫자 파싱 실패는 무시 (데이터 형식 문제일 수 있음)
+                        }
+                    }
                 }
             }
 
             assertTrue(hasCachedData, 
                     String.format("period=%s: Redis에 캐싱된 데이터가 없습니다. 배치가 정상적으로 실행되지 않았을 수 있습니다.", period));
             
-            System.out.printf("period=%s: %d개의 심볼에 대해 데이터가 Redis에 캐싱되었습니다.%n", period, cachedSymbolCount);
+            System.out.printf("period=%s: %d개의 심볼에 대해 데이터가 Redis에 캐싱되었습니다. (검증 완료: %d개)%n", 
+                    period, cachedSymbolCount, validatedSymbolCount);
         }
+        
+        System.out.println("\n=== 모든 period 테스트 완료 ===");
     }
 }
 

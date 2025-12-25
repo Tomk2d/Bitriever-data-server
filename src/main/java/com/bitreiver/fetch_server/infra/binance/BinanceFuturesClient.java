@@ -1,6 +1,6 @@
 package com.bitreiver.fetch_server.infra.binance;
 
-import com.bitreiver.fetch_server.infra.binance.dto.BinanceLongShortRatioResponse;
+import com.bitreiver.fetch_server.infra.binance.dto.BinanceTakerLongShortRatioResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
@@ -21,20 +21,20 @@ public class BinanceFuturesClient {
     }
     
     /**
-     * Binance USDⓈ-M Futures Top Trader Long/Short Position Ratio 조회
+     * Binance USDⓈ-M Futures Taker Long/Short Ratio 조회 (거래량 기반)
      * 
      * @param symbol 심볼 (예: BTCUSDT)
      * @param period 기간 ("5m","15m","30m","1h","2h","4h","6h","12h","1d")
      * @param limit 제한 (기본값 30, 최대 500)
-     * @return Long/Short Ratio 응답 리스트
+     * @return Taker Long/Short Ratio 응답 리스트 (거래량 기반)
      */
-    public Mono<List<BinanceLongShortRatioResponse>> getTopLongShortPositionRatio(
+    public Mono<List<BinanceTakerLongShortRatioResponse>> getTakerLongShortRatio(
             String symbol, 
             String period, 
             Long limit) {
         
         UriComponentsBuilder uriBuilder = UriComponentsBuilder
-            .fromPath("/futures/data/topLongShortPositionRatio")
+            .fromPath("/futures/data/takerlongshortRatio")
             .queryParam("symbol", symbol)
             .queryParam("period", period);
         
@@ -50,7 +50,7 @@ public class BinanceFuturesClient {
             .get()
             .uri(uri)
             .retrieve()
-            .bodyToFlux(BinanceLongShortRatioResponse.class)
+            .bodyToFlux(BinanceTakerLongShortRatioResponse.class)
             .collectList()
             .doOnError(error -> log.debug("Binance API 호출 실패 - symbol: {}, period: {}, error: {}", 
                 symbol, period, error.getMessage()));
