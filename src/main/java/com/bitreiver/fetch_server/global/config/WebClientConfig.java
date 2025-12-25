@@ -25,7 +25,7 @@ public class WebClientConfig {
     
     @Value("${external.alternative.me.api.url:https://alternative.me}")
     private String alternativeMeApiUrl;
-    
+
     @Value("${external.binance.api.url:https://fapi.binance.com}")
     private String binanceApiUrl;
 

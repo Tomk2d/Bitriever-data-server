@@ -5,12 +5,15 @@ import com.bitreiver.fetch_server.domain.coin.repository.CoinRepository;
 import com.bitreiver.fetch_server.global.cache.RedisCacheService;
 import com.bitreiver.fetch_server.infra.binance.BinanceFuturesClient;
 import com.bitreiver.fetch_server.infra.binance.dto.BinanceLongShortRatioResponse;
+import com.bitreiver.fetch_server.infra.binance.dto.BinanceTakerLongShortRatioResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
@@ -48,12 +51,45 @@ public class LongShortRatioServiceImpl implements LongShortRatioService {
                 String symbolWithQuote = symbol + "USDT";
                 return CompletableFuture.runAsync(() -> {
                     try {
-                        List<BinanceLongShortRatioResponse> response = binanceFuturesClient
-                            .getTopLongShortPositionRatio(symbolWithQuote, period, limit)
+                        // 거래량 기반 엔드포인트 호출
+                        List<BinanceTakerLongShortRatioResponse> takerResponse = binanceFuturesClient
+                            .getTakerLongShortRatio(symbolWithQuote, period, limit)
                             .block();
                         
-                        if (response != null && !response.isEmpty()) {
-                            resultData.put(symbol, response);
+                        if (takerResponse != null && !takerResponse.isEmpty()) {
+                            // 거래량 데이터를 BinanceLongShortRatioResponse 형태로 변환
+                            List<BinanceLongShortRatioResponse> convertedResponse = takerResponse.stream()
+                                .map(taker -> {
+                                    BigDecimal buyVol = new BigDecimal(taker.getBuyVol());
+                                    BigDecimal sellVol = new BigDecimal(taker.getSellVol());
+                                    BigDecimal totalVol = buyVol.add(sellVol);
+                                    
+                                    // 롱 비율 = 매수 거래량 / 전체 거래량
+                                    // 숏 비율 = 매도 거래량 / 전체 거래량
+                                    // 롱/숏 비율 = 매수 거래량 / 매도 거래량
+                                    BigDecimal longAccount = totalVol.compareTo(BigDecimal.ZERO) > 0
+                                        ? buyVol.divide(totalVol, 4, RoundingMode.HALF_UP)
+                                        : BigDecimal.ZERO;
+                                    BigDecimal shortAccount = totalVol.compareTo(BigDecimal.ZERO) > 0
+                                        ? sellVol.divide(totalVol, 4, RoundingMode.HALF_UP)
+                                        : BigDecimal.ZERO;
+                                    BigDecimal longShortRatio = sellVol.compareTo(BigDecimal.ZERO) > 0
+                                        ? buyVol.divide(sellVol, 4, RoundingMode.HALF_UP)
+                                        : BigDecimal.ZERO;
+                                    
+                                    BinanceLongShortRatioResponse response = new BinanceLongShortRatioResponse();
+                                    // API 응답에 symbol이 없으므로 symbolWithQuote 사용
+                                    response.setSymbol(symbolWithQuote);
+                                    response.setLongAccount(longAccount.toString());
+                                    response.setShortAccount(shortAccount.toString());
+                                    response.setLongShortRatio(longShortRatio.toString());
+                                    response.setTimestamp(taker.getTimestamp());
+                                    
+                                    return response;
+                                })
+                                .collect(Collectors.toList());
+                            
+                            resultData.put(symbol, convertedResponse);
                             log.debug("성공적으로 조회된 심볼: {}", symbolWithQuote);
                         } else {
                             unsupportedSymbols.add(symbolWithQuote);
