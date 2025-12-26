@@ -36,9 +36,9 @@ public class ArticleServiceImpl implements ArticleService {
                 }
             } else {
                 // articleId가 null인 경우 originalUrl로 대체 체크
-                if (articleRepository.existsByOriginalUrl(dto.getOriginalUrl())) {
-                    skippedCount++;
-                    continue;
+            if (articleRepository.existsByOriginalUrl(dto.getOriginalUrl())) {
+                skippedCount++;
+                continue;
                 }
             }
             

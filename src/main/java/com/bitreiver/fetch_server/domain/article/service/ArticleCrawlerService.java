@@ -15,6 +15,14 @@ public interface ArticleCrawlerService {
     Mono<Integer> initializeAllArticles();
     
     /**
+     * 초기화 크롤링: 지정된 시작 페이지부터 모든 페이지의 기사를 크롤링하고 저장합니다.
+     * 
+     * @param startPage 시작 페이지 번호
+     * @return 저장된 총 기사 수
+     */
+    Mono<Integer> initializeAllArticles(int startPage);
+    
+    /**
      * 증분 크롤링: DB에 없는 새로운 기사만 크롤링하고 저장합니다.
      * 
      * @return 저장된 총 기사 수
