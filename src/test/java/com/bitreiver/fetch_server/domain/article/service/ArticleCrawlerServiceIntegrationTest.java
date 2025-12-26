@@ -87,5 +87,41 @@ class ArticleCrawlerServiceIntegrationTest {
 
         System.out.println("\n=== 증분 크롤링 통합 테스트 완료 ===\n");
     }
+
+    @Test
+    @DisplayName("초기화 크롤링 통합 테스트 - 특정 시작 페이지부터 (8201페이지부터)")
+    void initializeAllArticles_fromStartPage_integrationTest() {
+        int startPage = 8201;
+        System.out.println("\n=== 초기화 크롤링 통합 테스트 시작 (시작 페이지: " + startPage + ") ===\n");
+        System.out.println("주의: 실제 네트워크 요청이 발생하며 시간이 걸릴 수 있습니다.\n");
+
+        Integer totalSaved = articleCrawlerService.initializeAllArticles(startPage)
+            .doOnSubscribe(subscription -> System.out.println("초기화 크롤링 Mono 구독 시작 (시작 페이지: " + startPage + ")"))
+            .doOnNext(result -> {
+                System.out.println("\n========================================");
+                System.out.println("초기화 크롤링 완료");
+                System.out.println("========================================");
+                System.out.printf("시작 페이지: %d\n", startPage);
+                System.out.printf("총 저장된 기사 수: %d개\n", result);
+                System.out.println("========================================\n");
+            })
+            .doOnError(error -> {
+                System.err.println("\n=== 초기화 크롤링 에러 발생 ===");
+                System.err.println("시작 페이지: " + startPage);
+                System.err.println("에러 메시지: " + error.getMessage());
+                System.err.println("에러 타입: " + error.getClass().getName());
+                error.printStackTrace();
+                System.err.println("================================\n");
+            })
+            .doOnTerminate(() -> System.out.println("초기화 크롤링 Mono 종료"))
+            .block(Duration.ofHours(2)); // 2시간 타임아웃 (많은 페이지 처리 시)
+
+        System.out.println("block() 결과: " + (totalSaved != null ? totalSaved + "개 저장됨" : "null"));
+
+        assertNotNull(totalSaved, "저장된 기사 수가 null입니다.");
+        assertTrue(totalSaved >= 0, "저장된 기사 수는 0 이상이어야 합니다.");
+
+        System.out.println("\n=== 초기화 크롤링 통합 테스트 완료 (시작 페이지: " + startPage + ") ===\n");
+    }
 }
 

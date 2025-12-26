@@ -104,8 +104,8 @@ public class BlockMediaCrawler implements NewsCrawler {
         
         log.info("블록미디어 마지막 페이지 번호 조회 시작");
         
-        return blockMediaWebClient
-            .get()
+                return blockMediaWebClient
+                    .get()
             .uri(url)
             .exchangeToMono(response -> {
                 HttpStatusCode status = response.statusCode();
@@ -133,33 +133,33 @@ public class BlockMediaCrawler implements NewsCrawler {
                     log.error("마지막 페이지 번호 조회 실패: {}", error.getMessage(), error);
                 }
             })
-            .map(html -> {
+                    .map(html -> {
                 if (html == null || html.isEmpty()) {
                     log.warn("블록미디어 마지막 페이지 조회: 응답 본문이 비어있음");
                     return 1;
                 }
                 
-                Document doc = Jsoup.parse(html);
-                Elements pageLinks = doc.select("a.page-numbers[href*='/all-posts/page/']");
-                
-                int maxPage = 1;
-                Pattern pagePattern = Pattern.compile("/all-posts/page/(\\d+)");
-                
-                for (Element link : pageLinks) {
-                    String href = link.attr("href");
-                    Matcher matcher = pagePattern.matcher(href);
-                    if (matcher.find()) {
-                        try {
-                            int pageNum = Integer.parseInt(matcher.group(1));
-                            maxPage = Math.max(maxPage, pageNum);
-                        } catch (NumberFormatException e) {
-                            // 무시
+                        Document doc = Jsoup.parse(html);
+                        Elements pageLinks = doc.select("a.page-numbers[href*='/all-posts/page/']");
+                        
+                        int maxPage = 1;
+                        Pattern pagePattern = Pattern.compile("/all-posts/page/(\\d+)");
+                        
+                        for (Element link : pageLinks) {
+                            String href = link.attr("href");
+                            Matcher matcher = pagePattern.matcher(href);
+                            if (matcher.find()) {
+                                try {
+                                    int pageNum = Integer.parseInt(matcher.group(1));
+                                    maxPage = Math.max(maxPage, pageNum);
+                                } catch (NumberFormatException e) {
+                                    // 무시
+                                }
+                            }
                         }
-                    }
-                }
-                
+                        
                 log.info("마지막 페이지 번호: {}", maxPage);
-                return maxPage;
+                        return maxPage;
             });
     }
     
@@ -208,7 +208,7 @@ public class BlockMediaCrawler implements NewsCrawler {
             if (!datetimeAttr.isEmpty()) {
                 // "2025-12-25 19:30" 형식
                 LocalDateTime publishedAt = extractPublishedAtFromDatetime(datetimeAttr);
-                builder.publishedAt(publishedAt);
+            builder.publishedAt(publishedAt);
             }
         }
         
@@ -239,10 +239,10 @@ public class BlockMediaCrawler implements NewsCrawler {
         try {
             // "2025-12-25 19:30" 형식
             return LocalDateTime.parse(datetime.trim(), DATE_FORMATTER);
-        } catch (Exception e) {
+            } catch (Exception e) {
             log.warn("날짜 파싱 실패: datetime={}", datetime);
-            return null;
-        }
+        return null;
+    }
     }
     
 }
