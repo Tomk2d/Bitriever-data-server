@@ -18,16 +18,20 @@ public class BatchScheduler {
     private final Job fetchRecentFearGreedDataJob;
     private final Job fetchYesterdayFearGreedDataJob;
     private final Job binanceLongShortRatioJob;
+    private final Job fetchEconomicIndicesJob;
+
     
     public BatchScheduler(
             @Qualifier("asyncJobLauncher") JobLauncher jobLauncher,
             @Qualifier("fetchRecentFearGreedDataJob") Job fetchRecentFearGreedDataJob,
             @Qualifier("fetchYesterdayFearGreedDataJob") Job fetchYesterdayFearGreedDataJob,
-            @Qualifier("binanceLongShortRatioJob") Job binanceLongShortRatioJob) {
+            @Qualifier("binanceLongShortRatioJob") Job binanceLongShortRatioJob,
+            @Qualifier("fetchEconomicIndicesJob") Job fetchEconomicIndicesJob) {
         this.jobLauncher = jobLauncher;
         this.fetchRecentFearGreedDataJob = fetchRecentFearGreedDataJob;
         this.fetchYesterdayFearGreedDataJob = fetchYesterdayFearGreedDataJob;
         this.binanceLongShortRatioJob = binanceLongShortRatioJob;
+        this.fetchEconomicIndicesJob = fetchEconomicIndicesJob;
     }
     
     /**
@@ -116,5 +120,22 @@ public class BatchScheduler {
     @Scheduled(cron = "0 1 0 * * *")
     public void scheduleBinanceLongShort1d() {
         runBinanceLongShortJob("1d", 30L);
+    }
+
+    /**
+     * 경제 지표 수집 배치
+     * 10분마다 실행 (600,000ms = 10분)
+     */
+    @Scheduled(cron = "0 */10 * * * *")
+    public void scheduleFetchEconomicIndices() {
+        try {
+            JobParameters jobParameters = new JobParametersBuilder()
+                .addLong("timestamp", System.currentTimeMillis())
+                .toJobParameters();
+            
+            jobLauncher.run(fetchEconomicIndicesJob, jobParameters);
+        } catch (Exception e) {
+            log.error("경제 지표 수집 배치 작업 실행 실패: {}", e.getMessage(), e);
+        }
     }
 }
