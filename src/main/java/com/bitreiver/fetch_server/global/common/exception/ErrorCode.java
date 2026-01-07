@@ -50,6 +50,7 @@ public enum ErrorCode {
     FEAR_GREED_NOT_FOUND(HttpStatus.NOT_FOUND, "FEAR_GREED_NOT_FOUND", "해당 날짜의 공포/탐욕 지수를 찾을 수 없습니다."),
     FEAR_GREED_API_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "FEAR_GREED_API_ERROR", "공포/탐욕 지수 API 호출에 실패했습니다.");
     
+
     private final HttpStatus httpStatus;
     private final String code;
     private final String message;

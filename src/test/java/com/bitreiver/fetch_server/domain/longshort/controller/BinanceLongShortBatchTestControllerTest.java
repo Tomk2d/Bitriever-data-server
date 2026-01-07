@@ -11,7 +11,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
@@ -26,13 +25,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-@TestPropertySource(properties = {
-    "spring.data.redis.host=localhost",
-    "spring.data.redis.port=6379",
-    "spring.data.redis.password=bitriever0320",
-    "spring.data.redis.replica.host=localhost",
-    "spring.data.redis.replica.port=6379"
-})
 class BinanceLongShortBatchTestControllerTest {
 
     @Autowired
