@@ -19,6 +19,7 @@ public class BatchScheduler {
     private final Job fetchYesterdayFearGreedDataJob;
     private final Job binanceLongShortRatioJob;
     private final Job fetchEconomicIndicesJob;
+    private final Job fetchEconomicEventsJob;
 
     
     public BatchScheduler(
@@ -26,12 +27,14 @@ public class BatchScheduler {
             @Qualifier("fetchRecentFearGreedDataJob") Job fetchRecentFearGreedDataJob,
             @Qualifier("fetchYesterdayFearGreedDataJob") Job fetchYesterdayFearGreedDataJob,
             @Qualifier("binanceLongShortRatioJob") Job binanceLongShortRatioJob,
-            @Qualifier("fetchEconomicIndicesJob") Job fetchEconomicIndicesJob) {
+            @Qualifier("fetchEconomicIndicesJob") Job fetchEconomicIndicesJob,
+            @Qualifier("fetchEconomicEventsJob") Job fetchEconomicEventsJob) {
         this.jobLauncher = jobLauncher;
         this.fetchRecentFearGreedDataJob = fetchRecentFearGreedDataJob;
         this.fetchYesterdayFearGreedDataJob = fetchYesterdayFearGreedDataJob;
         this.binanceLongShortRatioJob = binanceLongShortRatioJob;
         this.fetchEconomicIndicesJob = fetchEconomicIndicesJob;
+        this.fetchEconomicEventsJob = fetchEconomicEventsJob;
     }
     
     /**
@@ -136,6 +139,25 @@ public class BatchScheduler {
             jobLauncher.run(fetchEconomicIndicesJob, jobParameters);
         } catch (Exception e) {
             log.error("경제 지표 수집 배치 작업 실행 실패: {}", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 경제 지표 이벤트 수집 배치
+     * 매일 한국시간 00:10:00에 실행 (하루 1회)
+     * 2026-01부터 현재 달 +2개월까지 수집
+     * 각 요청 사이에 1초 딜레이 적용
+     */
+    @Scheduled(cron = "0 10 0 * * *", zone = "Asia/Seoul")
+    public void scheduleFetchEconomicEvents() {
+        try {
+            JobParameters jobParameters = new JobParametersBuilder()
+                .addLong("timestamp", System.currentTimeMillis())
+                .toJobParameters();
+            
+            jobLauncher.run(fetchEconomicEventsJob, jobParameters);
+        } catch (Exception e) {
+            log.error("경제 지표 이벤트 수집 배치 작업 실행 실패: {}", e.getMessage(), e);
         }
     }
 }
