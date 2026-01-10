@@ -6,10 +6,13 @@ import com.bitreiver.fetch_server.domain.economicEvent.repository.EconomicEventR
 import com.bitreiver.fetch_server.domain.economicEvent.repository.EconomicEventValueRepository;
 import com.bitreiver.fetch_server.infra.tossInvest.TossInvestCalendarClient;
 import com.bitreiver.fetch_server.infra.tossInvest.dto.TossInvestCalendarResponse;
+import com.bitreiver.fetch_server.domain.economicEvent.dto.EconomicEventRedisDto;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.bitreiver.fetch_server.global.cache.RedisCacheService;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -18,6 +21,7 @@ import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -26,10 +30,14 @@ public class EconomicEventServiceImpl implements EconomicEventService {
     private final TossInvestCalendarClient tossInvestCalendarClient;
     private final EconomicEventRepository economicEventRepository;
     private final EconomicEventValueRepository economicEventValueRepository;
+    private final RedisCacheService redisCacheService;
     
     private static final String EVENT_GROUP_ECONOMIC = "ECONOMIC";
     private static final String START_YEAR_MONTH = "2026-01";
     private static final DateTimeFormatter YEAR_MONTH_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM");
+
+    private static final String REDIS_KEY_PREFIX = "economic-events:upcoming:";
+    private static final long TTL_SECONDS = 86400;   // 1일
 
     @Override
     @Transactional
@@ -126,6 +134,32 @@ public class EconomicEventServiceImpl implements EconomicEventService {
         
         log.info("전체 월별 경제 지표 데이터 수집 완료: 총 저장={}", totalSaved);
         return totalSaved;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<EconomicEvent> getUpcomingEvents(int limit) {
+        LocalDate today = LocalDate.now();
+        return economicEventRepository.findUpcomingEvents(today, limit);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public void cacheUpcomingEvents(int limit) {
+        try {
+            List<EconomicEvent> events = getUpcomingEvents(limit);
+            
+            List<EconomicEventRedisDto> dtoList = events.stream()
+                .map(EconomicEventRedisDto::from)
+                .collect(Collectors.toList());
+            
+            String redisKey = REDIS_KEY_PREFIX + "top" + limit;
+            redisCacheService.set(redisKey, dtoList, TTL_SECONDS);
+            
+        } catch (Exception e) {
+            log.error("다가오는 경제 지표 이벤트 Redis 저장 실패: {}", e.getMessage(), e);
+            throw new RuntimeException("다가오는 경제 지표 이벤트 Redis 저장 실패", e);
+        }
     }
 
     private EconomicEvent buildEconomicEvent(TossInvestCalendarResponse.Event event) {
