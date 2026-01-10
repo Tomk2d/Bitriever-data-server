@@ -27,6 +27,9 @@ public class EconomicEventBatchJob {
         return (contribution, chunkContext) -> {
             int totalSaved = economicEventService.fetchAndSaveAllMonthlyData();
             log.info("경제 지표 이벤트 배치 작업 완료: 총 저장={}", totalSaved);
+
+            economicEventService.cacheUpcomingEvents(5);
+
             return RepeatStatus.FINISHED;
         };
     }
