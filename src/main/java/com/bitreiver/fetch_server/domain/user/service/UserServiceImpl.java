@@ -1,5 +1,6 @@
 package com.bitreiver.fetch_server.domain.user.service;
 
+import com.bitreiver.fetch_server.domain.asset.service.AssetService;
 import com.bitreiver.fetch_server.domain.user.dto.AuthResponse;
 import com.bitreiver.fetch_server.domain.user.dto.UserLoginRequest;
 import com.bitreiver.fetch_server.domain.user.dto.UserResponse;
@@ -17,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -28,6 +30,7 @@ public class UserServiceImpl implements UserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final ObjectMapper objectMapper;
+    private final AssetService assetService;
     
     @Override
     @Transactional
@@ -95,6 +98,21 @@ public class UserServiceImpl implements UserService {
             user.updateLastLogin();
             userRepository.save(user);
             
+            log.info("UserServiceImpl.login - 로그인 성공, 자산 동기화 시작: user_id={}", user.getId());
+            
+            // 로그인 시 모든 연동 거래소의 자산 동기화 (비동기 처리, 실패해도 로그인은 성공)
+            try {
+                log.info("UserServiceImpl.login - syncAllExchangeAssets 호출 전: user_id={}", user.getId());
+                Map<String, Object> syncResult = assetService.syncAllExchangeAssets(user.getId());
+                log.info("로그인 시 자산 동기화 완료: user_id={}, total_saved={}, total_deleted={}", 
+                    user.getId(), syncResult.get("total_saved_count"), syncResult.get("total_deleted_count"));
+            } catch (Exception e) {
+                // 자산 동기화 실패해도 로그인은 성공하도록 처리
+                log.warn("로그인 시 자산 동기화 실패 (로그인은 정상 처리됨): user_id={}, error={}, stackTrace={}", 
+                    user.getId(), e.getMessage(), e);
+            }
+            
+            log.info("UserServiceImpl.login - 로그인 처리 완료: user_id={}", user.getId());
             return AuthResponse.from(user);
         } catch (CustomException e) {
             if (e.getErrorCode() != ErrorCode.USER_NOT_FOUND && 
@@ -144,13 +162,22 @@ public class UserServiceImpl implements UserService {
     
     @Override
     @Transactional
-    public void updateUserTradingHistoryUpdatedAt(UUID userId) {
+    public void updateUserTradingHistoryUpdatedAt(UUID userId, String exchangeType) {
         try {
             User user = userRepository.findById(userId)
                 .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
             
-            user.updateTradingHistorySyncTime();
+            // 거래소별로 마지막 동기화 시간 업데이트
+            if ("UPBIT".equalsIgnoreCase(exchangeType)) {
+                user.updateUpbitTradingHistorySyncTime();
+            } else if ("COINONE".equalsIgnoreCase(exchangeType)) {
+                user.updateCoinoneTradingHistorySyncTime();
+            } else {
+                log.warn("updateUserTradingHistoryUpdatedAt - 알 수 없는 거래소: {}", exchangeType);
+            }
+            
             userRepository.save(user);
+            log.info("updateUserTradingHistoryUpdatedAt - userId: {}, exchange: {} 업데이트 완료", userId, exchangeType);
         } catch (CustomException e) {
             log.error("updateUserTradingHistoryUpdatedAt - {}", e.getMessage());
             throw e;

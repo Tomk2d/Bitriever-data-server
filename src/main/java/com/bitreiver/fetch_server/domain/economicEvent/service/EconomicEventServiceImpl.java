@@ -320,4 +320,40 @@ public class EconomicEventServiceImpl implements EconomicEventService {
             .preAnnouncementWording(indicatorValue.getPreAnnouncementWording())
             .build();
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public int getTodayEventCount() {
+        try {
+            LocalDate today = LocalDate.now();
+            String redisKey = REDIS_KEY_PREFIX + "today-count:" + today;
+            
+            Integer cachedCount = redisCacheService.get(redisKey, Integer.class)
+                .orElse(null);
+            
+            if (cachedCount != null) {
+                return cachedCount;
+            }
+            
+            log.info("Redis 캐시 미스 - DB에서 오늘 날짜 이벤트 개수 조회 후 캐싱 - key: {}", redisKey);
+            
+            int count = economicEventRepository.countByEventDate(today);
+            cacheTodayEventCount(redisKey, count);
+            
+            return count;
+        } catch (Exception e) {
+            log.error("오늘 날짜 경제 지표 이벤트 개수 조회 실패: {}", e.getMessage(), e);
+            LocalDate today = LocalDate.now();
+            return economicEventRepository.countByEventDate(today);
+        }
+    }
+
+    private void cacheTodayEventCount(String redisKey, int count) {
+        try {
+            redisCacheService.set(redisKey, count, TTL_SECONDS);
+            log.info("DB 조회 후 Redis 캐시 저장 완료 - key: {}, count: {}", redisKey, count);
+        } catch (Exception e) {
+            log.warn("Redis 캐시 저장 실패 - key: {}, error: {}", redisKey, e.getMessage());
+        }
+    }
 }

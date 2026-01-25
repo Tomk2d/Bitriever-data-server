@@ -1,5 +1,6 @@
 package com.bitreiver.fetch_server.domain.exchange.service;
 
+import com.bitreiver.fetch_server.domain.coinone.service.CoinoneService;
 import com.bitreiver.fetch_server.domain.exchange.dto.ExchangeCredentialRequest;
 import com.bitreiver.fetch_server.domain.exchange.dto.ExchangeCredentialResponse;
 import com.bitreiver.fetch_server.domain.exchange.entity.ExchangeCredential;
@@ -31,6 +32,7 @@ public class ExchangeCredentialServiceImpl implements ExchangeCredentialService 
     private final UserRepository userRepository;
     private final EncryptionUtil encryptionUtil;
     private final ObjectMapper objectMapper;
+    private final CoinoneService coinoneService;
     
     @Override
     @Transactional
@@ -171,13 +173,32 @@ public class ExchangeCredentialServiceImpl implements ExchangeCredentialService 
                 return false;
             }
             
+            // 복호화 확인
+            String accessKey;
+            String secretKey;
             try {
-                encryptionUtil.decrypt(credentials.get().getEncryptedAccessKey());
-                encryptionUtil.decrypt(credentials.get().getEncryptedSecretKey());
-                return true;
+                accessKey = encryptionUtil.decrypt(credentials.get().getEncryptedAccessKey());
+                secretKey = encryptionUtil.decrypt(credentials.get().getEncryptedSecretKey());
             } catch (Exception e) {
                 log.warn("verifyCredentials - 자격증명 복호화 실패: {}", e.getMessage());
                 return false;
+            }
+            
+            // 거래소별 실제 API 호출 검증
+            ExchangeType exchangeType = ExchangeType.fromCode(exchangeProvider);
+            
+            if (exchangeType == ExchangeType.COINONE) {
+                // 코인원: 실제 API 호출로 검증
+                try {
+                    Boolean isValid = coinoneService.verifyCredentials(accessKey, secretKey).block();
+                    return Boolean.TRUE.equals(isValid);
+                } catch (Exception e) {
+                    log.error("코인원 자격증명 API 검증 중 오류 발생: {}", e.getMessage(), e);
+                    return false;
+                }
+            } else {
+                // 업비트 및 기타 거래소: 복호화 확인만 수행 (기존 로직 유지)
+                return true;
             }
         } catch (Exception e) {
             log.error("verifyCredentials - 예상치 못한 오류 발생: {}", e.getMessage(), e);

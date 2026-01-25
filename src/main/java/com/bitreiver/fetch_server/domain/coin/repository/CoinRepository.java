@@ -11,6 +11,7 @@ import java.util.Optional;
 public interface CoinRepository extends JpaRepository<Coin, Integer> {
     Optional<Coin> findByMarketCode(String marketCode);
     Optional<Coin> findBySymbolAndQuoteCurrency(String symbol, String quoteCurrency);
+    Optional<Coin> findBySymbolAndQuoteCurrencyAndExchange(String symbol, String quoteCurrency, String exchange);
     List<Coin> findByMarketCodeIn(List<String> marketCodes);
     List<Coin> findByExchange(String exchange);
     List<Coin> findByIsActiveTrue();

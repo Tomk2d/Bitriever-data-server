@@ -15,5 +15,5 @@ public interface UserService {
     boolean checkEmailDuplicate(String email);
     boolean checkNicknameDuplicate(String nickname);
     Optional<User> getUser(UUID userId);
-    void updateUserTradingHistoryUpdatedAt(UUID userId);
+    void updateUserTradingHistoryUpdatedAt(UUID userId, String exchangeType);
 }
