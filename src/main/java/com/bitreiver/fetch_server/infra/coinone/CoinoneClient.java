@@ -4,9 +4,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.util.UriComponentsBuilder;
 import reactor.core.publisher.Mono;
 
 import javax.crypto.Mac;
@@ -73,6 +75,38 @@ public class CoinoneClient {
                 
         } catch (Exception e) {
             log.error("CoinoneClient POST 요청 중 에러 발생: {}", e.getMessage(), e);
+            return Mono.error(e);
+        }
+    }
+    
+    /**
+     * 일봉 차트 데이터 조회 (공개 API)
+     * 
+     * @param targetCurrency 조회할 코인 심볼 (예: BTC)
+     * @param timestamp 마지막 캔들 타임스탬프 (UTC, Unix time ms), null이면 최신 데이터
+     * @param size 조회할 캔들 수 (최소 1 ~ 최대 500)
+     * @return 차트 데이터
+     */
+    public Mono<Map<String, Object>> getDailyChart(String targetCurrency, Long timestamp, int size) {
+        try {
+            String endpoint = "/public/v2/chart/KRW/" + targetCurrency;
+            
+            UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(baseUrl + endpoint)
+                .queryParam("interval", "1d")
+                .queryParam("size", Math.min(Math.max(size, 1), 500));
+            
+            if (timestamp != null) {
+                builder.queryParam("timestamp", timestamp);
+            }
+            
+            return coinoneWebClient.get()
+                .uri(builder.build().toUri())
+                .retrieve()
+                .bodyToMono(new ParameterizedTypeReference<Map<String, Object>>() {})
+                .doOnError(error -> log.error("Coinone 일봉 차트 조회 실패 - {}: {}", targetCurrency, error.getMessage()));
+                
+        } catch (Exception e) {
+            log.error("Coinone 일봉 차트 조회 중 에러 발생: {}", e.getMessage(), e);
             return Mono.error(e);
         }
     }

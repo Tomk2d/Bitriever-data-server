@@ -144,5 +144,27 @@ public class UpbitController {
             "자산 동기화가 완료되었습니다. 저장: " + result.get("saved_count") + 
             "개, 삭제: " + result.get("deleted_count") + "개"));
     }
+    
+    @Operation(summary = "일봉 데이터 동기화", description = "모든 업비트 활성 코인의 일봉 데이터를 동기화합니다. " +
+            "DB에 저장된 마지막 날짜 이후부터 현재까지 데이터를 수집합니다.")
+    @ApiResponses(value = {
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "동기화 성공"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "500", description = "서버 내부 오류")
+    })
+    @PostMapping("/syncDailyCandles")
+    public Mono<ResponseEntity<ApiResponse<Object>>> syncDailyCandles() {
+        return upbitService.syncAllCoinDailyCandles()
+            .<ResponseEntity<ApiResponse<Object>>>map(result -> ResponseEntity.ok(ApiResponse.<Object>success(result, 
+                "일봉 데이터 동기화가 완료되었습니다. 성공: " + result.get("successCount") + 
+                "개, 실패: " + result.get("errorCount") + "개, 저장된 캔들: " + result.get("totalCandlesSaved") + "개")))
+            .onErrorResume(error -> {
+                if (error instanceof CustomException) {
+                    return Mono.error(error);
+                }
+                log.error("일봉 데이터 동기화 중 오류 발생: {}", error.getMessage(), error);
+                return Mono.error(new CustomException(ErrorCode.INTERNAL_ERROR, 
+                    "일봉 데이터 동기화 중 오류가 발생했습니다: " + error.getMessage()));
+            });
+    }
 }
 

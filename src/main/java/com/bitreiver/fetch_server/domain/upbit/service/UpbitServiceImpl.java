@@ -1,5 +1,9 @@
 package com.bitreiver.fetch_server.domain.upbit.service;
 
+import com.bitreiver.fetch_server.domain.coin.entity.Coin;
+import com.bitreiver.fetch_server.domain.coin.repository.CoinRepository;
+import com.bitreiver.fetch_server.domain.price.entity.CoinPriceDay;
+import com.bitreiver.fetch_server.domain.price.repository.CoinPriceDayRepository;
 import com.bitreiver.fetch_server.global.common.exception.CustomException;
 import com.bitreiver.fetch_server.global.common.exception.ErrorCode;
 import com.bitreiver.fetch_server.global.util.TimeUtil;
@@ -14,7 +18,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 @Slf4j
@@ -24,6 +31,11 @@ public class UpbitServiceImpl implements UpbitService {
     
     private final UpbitClient upbitClient;
     private final ObjectMapper objectMapper;
+    private final CoinRepository coinRepository;
+    private final CoinPriceDayRepository coinPriceDayRepository;
+    
+    private static final LocalDateTime DEFAULT_START_DATE = LocalDateTime.of(2017, 1, 1, 0, 0);
+    private static final DateTimeFormatter ISO_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
     
     @Override
     public Mono<List<String>> fetchAllTradingUuids(String accessKey, String secretKey, LocalDateTime startTime) {
@@ -249,6 +261,220 @@ public class UpbitServiceImpl implements UpbitService {
             log.error("fetchAccounts - 예상치 못한 오류 발생: {}", e.getMessage(), e);
             return Mono.error(new CustomException(ErrorCode.INTERNAL_ERROR, 
                 "계정 잔고 조회 중 오류가 발생했습니다: " + e.getMessage()));
+        }
+    }
+    
+    @Override
+    public Mono<Map<String, Object>> syncAllCoinDailyCandles() {
+        try {
+            log.info("업비트 일봉 데이터 동기화 시작");
+            
+            // 업비트 활성 코인 목록 조회
+            List<Coin> upbitCoins = coinRepository.findByExchange("UPBIT");
+            List<Coin> activeCoins = upbitCoins.stream()
+                .filter(coin -> Boolean.TRUE.equals(coin.getIsActive()))
+                .toList();
+            
+            log.info("동기화 대상 코인 수: {}", activeCoins.size());
+            
+            int successCount = 0;
+            int errorCount = 0;
+            int totalCandlesSaved = 0;
+            List<String> errorCoins = new ArrayList<>();
+            
+            for (Coin coin : activeCoins) {
+                try {
+                    int savedCount = syncCoinDailyCandles(coin);
+                    totalCandlesSaved += savedCount;
+                    successCount++;
+                    
+                    if (savedCount > 0) {
+                        log.info("[업비트] {} 동기화 성공: {}개 캔들 저장", coin.getMarketCode(), savedCount);
+                    }
+                    
+                    // Rate limit: 초당 10회 제한 -> 100ms 대기
+                    Thread.sleep(100);
+                    
+                } catch (Exception e) {
+                    errorCount++;
+                    errorCoins.add(coin.getMarketCode());
+                    log.error("[업비트] {} 동기화 실패: {}", coin.getMarketCode(), e.getMessage());
+                }
+            }
+            
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("totalCoins", activeCoins.size());
+            result.put("successCount", successCount);
+            result.put("errorCount", errorCount);
+            result.put("totalCandlesSaved", totalCandlesSaved);
+            result.put("errorCoins", errorCoins);
+            
+            log.info("업비트 일봉 데이터 동기화 완료 - 전체: {}, 성공: {}, 실패: {}, 저장된 캔들: {}", 
+                activeCoins.size(), successCount, errorCount, totalCandlesSaved);
+            
+            return Mono.just(result);
+            
+        } catch (Exception e) {
+            log.error("업비트 일봉 동기화 중 에러 발생: {}", e.getMessage(), e);
+            return Mono.error(new CustomException(ErrorCode.INTERNAL_ERROR, 
+                "업비트 일봉 동기화 중 오류가 발생했습니다: " + e.getMessage()));
+        }
+    }
+    
+    /**
+     * 단일 코인의 일봉 데이터 동기화
+     */
+    private int syncCoinDailyCandles(Coin coin) {
+        // DB에서 마지막 캔들 날짜 조회
+        Optional<CoinPriceDay> latestCandle = coinPriceDayRepository
+            .findTopByCoinIdOrderByCandleDateTimeUtcDesc(coin.getId());
+        
+        LocalDateTime startDate;
+        if (latestCandle.isPresent()) {
+            // 마지막 캔들 다음 날부터 시작
+            startDate = latestCandle.get().getCandleDateTimeUtc().plusDays(1);
+        } else {
+            // 데이터가 없으면 기본 시작 날짜 사용
+            startDate = DEFAULT_START_DATE;
+        }
+        
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+        
+        // 시작 날짜가 현재보다 미래면 동기화할 데이터 없음
+        if (startDate.isAfter(now)) {
+            log.debug("{}: 동기화할 새 데이터 없음", coin.getMarketCode());
+            return 0;
+        }
+        
+        log.debug("{}: {} 부터 동기화 시작", coin.getMarketCode(), startDate);
+        
+        List<CoinPriceDay> allCandles = new ArrayList<>();
+        LocalDateTime currentTo = now;
+        
+        // 역순으로 데이터 수집 (현재 -> 과거)
+        while (currentTo.isAfter(startDate)) {
+            String toStr = currentTo.format(ISO_FORMATTER);
+            
+            List<Map<String, Object>> candles = upbitClient.getDailyCandles(
+                coin.getMarketCode(), toStr, 200
+            ).block();
+            
+            if (candles == null || candles.isEmpty()) {
+                break;
+            }
+            
+            for (Map<String, Object> candleData : candles) {
+                CoinPriceDay candle = convertToCoinPriceDay(coin, candleData);
+                if (candle != null && candle.getCandleDateTimeUtc().isAfter(startDate.minusDays(1))) {
+                    // 중복 체크
+                    if (!coinPriceDayRepository.existsByMarketCodeAndCandleDateTimeUtc(
+                            candle.getMarketCode(), candle.getCandleDateTimeUtc())) {
+                        allCandles.add(candle);
+                    }
+                }
+            }
+            
+            // 가장 오래된 캔들 날짜 확인
+            String oldestDateStr = (String) candles.get(candles.size() - 1).get("candle_date_time_utc");
+            if (oldestDateStr != null) {
+                LocalDateTime oldestDate = LocalDateTime.parse(oldestDateStr.replace("T", "T").substring(0, 19));
+                if (oldestDate.isBefore(startDate) || oldestDate.equals(startDate)) {
+                    break;
+                }
+                currentTo = oldestDate.minusDays(1);
+            } else {
+                break;
+            }
+            
+            // 200개 미만이면 더 이상 데이터 없음
+            if (candles.size() < 200) {
+                break;
+            }
+            
+            // Rate limit 방지
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        
+        // 데이터 저장
+        if (!allCandles.isEmpty()) {
+            coinPriceDayRepository.saveAll(allCandles);
+            log.info("{}: {}개 캔들 저장 완료", coin.getMarketCode(), allCandles.size());
+        }
+        
+        return allCandles.size();
+    }
+    
+    /**
+     * API 응답을 CoinPriceDay 엔티티로 변환
+     */
+    private CoinPriceDay convertToCoinPriceDay(Coin coin, Map<String, Object> candleData) {
+        try {
+            String dateUtcStr = (String) candleData.get("candle_date_time_utc");
+            String dateKstStr = (String) candleData.get("candle_date_time_kst");
+            
+            LocalDateTime dateUtc = LocalDateTime.parse(dateUtcStr.substring(0, 19));
+            LocalDateTime dateKst = LocalDateTime.parse(dateKstStr.substring(0, 19));
+            
+            return CoinPriceDay.builder()
+                .coinId(coin.getId())
+                .marketCode((String) candleData.get("market"))
+                .candleDateTimeUtc(dateUtc)
+                .candleDateTimeKst(dateKst)
+                .openingPrice(toBigDecimal(candleData.get("opening_price")))
+                .highPrice(toBigDecimal(candleData.get("high_price")))
+                .lowPrice(toBigDecimal(candleData.get("low_price")))
+                .tradePrice(toBigDecimal(candleData.get("trade_price")))
+                .timestamp(toLong(candleData.get("timestamp")))
+                .candleAccTradePrice(toBigDecimal(candleData.get("candle_acc_trade_price")))
+                .candleAccTradeVolume(toBigDecimal(candleData.get("candle_acc_trade_volume")))
+                .prevClosingPrice(toBigDecimal(candleData.getOrDefault("prev_closing_price", 0)))
+                .changePrice(toBigDecimal(candleData.getOrDefault("change_price", 0)))
+                .changeRate(toBigDecimal(candleData.getOrDefault("change_rate", 0)))
+                .convertedTradePrice(toBigDecimal(candleData.get("converted_trade_price")))
+                .build();
+                
+        } catch (Exception e) {
+            log.warn("캔들 데이터 변환 실패: {}", e.getMessage());
+            return null;
+        }
+    }
+    
+    private BigDecimal toBigDecimal(Object value) {
+        if (value == null) {
+            return BigDecimal.ZERO;
+        }
+        if (value instanceof BigDecimal) {
+            return (BigDecimal) value;
+        }
+        if (value instanceof Number) {
+            return BigDecimal.valueOf(((Number) value).doubleValue());
+        }
+        try {
+            return new BigDecimal(value.toString());
+        } catch (NumberFormatException e) {
+            return BigDecimal.ZERO;
+        }
+    }
+    
+    private Long toLong(Object value) {
+        if (value == null) {
+            return 0L;
+        }
+        if (value instanceof Long) {
+            return (Long) value;
+        }
+        if (value instanceof Number) {
+            return ((Number) value).longValue();
+        }
+        try {
+            return Long.parseLong(value.toString());
+        } catch (NumberFormatException e) {
+            return 0L;
         }
     }
 }

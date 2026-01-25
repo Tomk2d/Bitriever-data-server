@@ -54,8 +54,6 @@ public class AssetController {
         UUID userId = UUID.fromString(request.getUserId());
         String callbackUrl = request.getCallbackUrl();
         
-        log.info("비동기 자산 동기화 요청: userId={}, callbackUrl={}", userId, callbackUrl);
-        
         // 비동기 처리 시작 (즉시 반환)
         syncService.syncAssetsAsync(userId, callbackUrl);
         
