@@ -1,5 +1,6 @@
 package com.bitreiver.fetch_server.global.batch;
 
+import com.bitreiver.fetch_server.domain.article.service.ArticleCrawlerService;
 import com.bitreiver.fetch_server.domain.coin.service.CoinImageService;
 import com.bitreiver.fetch_server.domain.coin.service.CoinService;
 import com.bitreiver.fetch_server.domain.coinone.service.CoinoneService;
@@ -25,6 +26,7 @@ public class BatchScheduler {
     private final JobLauncher jobLauncher;
     private final Job fetchRecentFearGreedDataJob;
     private final Job fetchYesterdayFearGreedDataJob;
+    private final Job fetchRecentFearGreedToDbJob;
     private final Job binanceLongShortRatioJob;
     private final Job fetchEconomicIndicesJob;
     private final Job fetchEconomicEventsJob;
@@ -32,22 +34,26 @@ public class BatchScheduler {
     private final CoinoneService coinoneService;
     private final CoinService coinService;
     private final CoinImageService coinImageService;
+    private final ArticleCrawlerService articleCrawlerService;
 
     
     public BatchScheduler(
             @Qualifier("asyncJobLauncher") JobLauncher jobLauncher,
             @Qualifier("fetchRecentFearGreedDataJob") Job fetchRecentFearGreedDataJob,
             @Qualifier("fetchYesterdayFearGreedDataJob") Job fetchYesterdayFearGreedDataJob,
+            @Qualifier("fetchRecentFearGreedToDbJob") Job fetchRecentFearGreedToDbJob,
             @Qualifier("binanceLongShortRatioJob") Job binanceLongShortRatioJob,
             @Qualifier("fetchEconomicIndicesJob") Job fetchEconomicIndicesJob,
             @Qualifier("fetchEconomicEventsJob") Job fetchEconomicEventsJob,
             UpbitService upbitService,
             CoinoneService coinoneService,
             CoinService coinService,
-            CoinImageService coinImageService) {
+            CoinImageService coinImageService,
+            ArticleCrawlerService articleCrawlerService) {
         this.jobLauncher = jobLauncher;
         this.fetchRecentFearGreedDataJob = fetchRecentFearGreedDataJob;
         this.fetchYesterdayFearGreedDataJob = fetchYesterdayFearGreedDataJob;
+        this.fetchRecentFearGreedToDbJob = fetchRecentFearGreedToDbJob;
         this.binanceLongShortRatioJob = binanceLongShortRatioJob;
         this.fetchEconomicIndicesJob = fetchEconomicIndicesJob;
         this.fetchEconomicEventsJob = fetchEconomicEventsJob;
@@ -55,6 +61,7 @@ public class BatchScheduler {
         this.coinoneService = coinoneService;
         this.coinService = coinService;
         this.coinImageService = coinImageService;
+        this.articleCrawlerService = articleCrawlerService;
     }
     
     /**
@@ -76,7 +83,7 @@ public class BatchScheduler {
     }
 
     /**
-     * 공포/탐욕 지수 어제 데이터 조회 배치
+     * 공포/탐욕 지수 어제 데이터 조회 배치 (Redis)
      * UTC 9시 03분마다 실행
      */
     @Scheduled(cron = "0 3 9 * * *")
@@ -89,6 +96,24 @@ public class BatchScheduler {
             jobLauncher.run(fetchYesterdayFearGreedDataJob, jobParameters);
         } catch (Exception e) {
             log.error("공포/탐욕 지수 어제 데이터 조회 배치 작업 실행 실패: {}", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 공포/탐욕 지수 DB 증분 저장 배치
+     * UTC 00:15에 실행 - 일주일치 데이터 중 DB에 없는 날짜만 저장
+     */
+    @Scheduled(cron = "0 15 0 * * *")
+    public void scheduleFetchFearGreedToDb() {
+        try {
+            log.info("공포/탐욕 지수 DB 증분 저장 배치 시작");
+            JobParameters jobParameters = new JobParametersBuilder()
+                .addLong("timestamp", System.currentTimeMillis())
+                .toJobParameters();
+            
+            jobLauncher.run(fetchRecentFearGreedToDbJob, jobParameters);
+        } catch (Exception e) {
+            log.error("공포/탐욕 지수 DB 증분 저장 배치 작업 실행 실패: {}", e.getMessage(), e);
         }
     }
 
@@ -256,6 +281,23 @@ public class BatchScheduler {
             log.info("코인원 코인 종목 패치 배치 작업 완료");
         } catch (Exception e) {
             log.error("코인원 코인 종목 패치 배치 작업 실행 실패: {}", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 블록미디어 기사 증분 크롤링 배치
+     * 10분마다 실행 - DB에 저장된 기사 이후의 새 기사만 수집
+     * 중복 방지: publisherType + articleId 또는 originalUrl로 체크
+     */
+    @Scheduled(cron = "0 */10 * * * *")
+    public void scheduleBlockMediaArticleCrawl() {
+        log.info("블록미디어 기사 증분 크롤링 배치 시작");
+        try {
+            Integer savedCount = articleCrawlerService.crawlNewArticles()
+                .block(Duration.ofMinutes(30)); // 최대 30분 대기
+            log.info("블록미디어 기사 증분 크롤링 배치 완료: 저장된 기사 수={}", savedCount);
+        } catch (Exception e) {
+            log.error("블록미디어 기사 증분 크롤링 배치 실패: {}", e.getMessage(), e);
         }
     }
 }
