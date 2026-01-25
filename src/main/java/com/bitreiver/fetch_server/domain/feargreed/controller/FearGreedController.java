@@ -52,5 +52,32 @@ public class FearGreedController {
         );
     }
     
+    @Operation(
+        summary = "최근 공포/탐욕 지수 증분 패치", 
+        description = "alternative.me API에서 최근 7일 데이터를 가져와 DB에 없는 날짜만 저장합니다. " +
+                     "매일 UTC 00:15 배치 작업과 동일한 로직입니다."
+    )
+    @ApiResponses(value = {
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200", 
+            description = "증분 패치 성공"
+        ),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "500", 
+            description = "서버 내부 오류 또는 API 호출 실패"
+        )
+    })
+    @PostMapping("/fetch-recent")
+    public ApiResponse<Map<String, Object>> fetchRecent() {
+        Map<String, Object> result = fearGreedService.fetchRecentDataAndSaveToDb();
+        return ApiResponse.success(
+            result, 
+            "공포/탐욕 지수 증분 패치가 완료되었습니다. " +
+            "조회: " + result.get("total_fetched") + "개, " +
+            "저장: " + result.get("saved") + "개, " +
+            "스킵: " + result.get("skipped") + "개"
+        );
+    }
+    
 }
 

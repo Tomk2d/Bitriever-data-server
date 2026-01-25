@@ -85,4 +85,37 @@ public class FearGreedBatchJob {
             .start(fetchYesterdayFearGreedDataStep())
             .build();
     }
+
+    /**
+     * 공포/탐욕 지수 최근 데이터 DB 증분 저장 Tasklet
+     * 일주일치 데이터를 가져와서 DB에 없는 날짜만 저장
+     */
+    @Bean
+    public Tasklet fetchRecentFearGreedToDbTasklet() {
+        return (contribution, chunkContext) -> {
+            fearGreedService.fetchRecentDataAndSaveToDb();
+            return RepeatStatus.FINISHED;
+        };
+    }
+
+    /**
+     * 공포/탐욕 지수 최근 데이터 DB 증분 저장 Step
+     */
+    @Bean
+    public Step fetchRecentFearGreedToDbStep() {
+        return new StepBuilder("fetchRecentFearGreedToDbStep", jobRepository)
+            .tasklet(fetchRecentFearGreedToDbTasklet(), transactionManager)
+            .build();
+    }
+
+    /**
+     * 공포/탐욕 지수 최근 데이터 DB 증분 저장 Job
+     * UTC 00:15에 실행하여 어제까지의 데이터를 DB에 저장
+     */
+    @Bean
+    public Job fetchRecentFearGreedToDbJob() {
+        return new JobBuilder("fetchRecentFearGreedToDbJob", jobRepository)
+            .start(fetchRecentFearGreedToDbStep())
+            .build();
+    }
 }
