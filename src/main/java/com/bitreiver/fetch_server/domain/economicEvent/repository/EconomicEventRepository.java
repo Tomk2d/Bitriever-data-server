@@ -16,4 +16,7 @@ public interface EconomicEventRepository extends JpaRepository<EconomicEvent, Lo
     
     Optional<EconomicEvent> findByUniqueName(String uniqueName);
 
+    @Query("SELECT COUNT(DISTINCT e) FROM EconomicEvent e " +
+       "WHERE e.eventDate = :date")
+    int countByEventDate(@Param("date") LocalDate date);
 }

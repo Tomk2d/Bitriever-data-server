@@ -11,4 +11,6 @@ public interface EconomicEventService {
     List<EconomicEvent> getUpcomingEvents(int limit);
 
     void cacheUpcomingEvents(int limit);
+
+    int getTodayEventCount();
 }

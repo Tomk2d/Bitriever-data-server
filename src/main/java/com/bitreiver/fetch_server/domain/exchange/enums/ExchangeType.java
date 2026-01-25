@@ -6,8 +6,9 @@ import lombok.Getter;
 public enum ExchangeType {
     UPBIT(1, "업비트"),
     BITHUMB(2, "빗썸"),
-    BINANCE(3, "바이낸스"),
-    OKX(4, "OKX");
+    COINONE(3, "코인원"),
+    BINANCE(11, "바이낸스"),
+    OKX(12, "OKX");
     
     private final int code;
     private final String name;

@@ -1,14 +1,22 @@
 package com.bitreiver.fetch_server.global.batch;
 
+import com.bitreiver.fetch_server.domain.coin.service.CoinImageService;
+import com.bitreiver.fetch_server.domain.coin.service.CoinService;
+import com.bitreiver.fetch_server.domain.coinone.service.CoinoneService;
+import com.bitreiver.fetch_server.domain.upbit.service.UpbitService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.JobParameters;
 import org.springframework.batch.core.JobParametersBuilder;
 import org.springframework.batch.core.launch.JobLauncher;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import com.bitreiver.fetch_server.domain.longshort.batch.BinanceLongShortRatioBatchJob;
+import reactor.util.retry.Retry;
+
+import java.time.Duration;
+import java.util.Map;
 
 @Slf4j
 @Component
@@ -20,6 +28,10 @@ public class BatchScheduler {
     private final Job binanceLongShortRatioJob;
     private final Job fetchEconomicIndicesJob;
     private final Job fetchEconomicEventsJob;
+    private final UpbitService upbitService;
+    private final CoinoneService coinoneService;
+    private final CoinService coinService;
+    private final CoinImageService coinImageService;
 
     
     public BatchScheduler(
@@ -28,13 +40,21 @@ public class BatchScheduler {
             @Qualifier("fetchYesterdayFearGreedDataJob") Job fetchYesterdayFearGreedDataJob,
             @Qualifier("binanceLongShortRatioJob") Job binanceLongShortRatioJob,
             @Qualifier("fetchEconomicIndicesJob") Job fetchEconomicIndicesJob,
-            @Qualifier("fetchEconomicEventsJob") Job fetchEconomicEventsJob) {
+            @Qualifier("fetchEconomicEventsJob") Job fetchEconomicEventsJob,
+            UpbitService upbitService,
+            CoinoneService coinoneService,
+            CoinService coinService,
+            CoinImageService coinImageService) {
         this.jobLauncher = jobLauncher;
         this.fetchRecentFearGreedDataJob = fetchRecentFearGreedDataJob;
         this.fetchYesterdayFearGreedDataJob = fetchYesterdayFearGreedDataJob;
         this.binanceLongShortRatioJob = binanceLongShortRatioJob;
         this.fetchEconomicIndicesJob = fetchEconomicIndicesJob;
         this.fetchEconomicEventsJob = fetchEconomicEventsJob;
+        this.upbitService = upbitService;
+        this.coinoneService = coinoneService;
+        this.coinService = coinService;
+        this.coinImageService = coinImageService;
     }
     
     /**
@@ -158,6 +178,84 @@ public class BatchScheduler {
             jobLauncher.run(fetchEconomicEventsJob, jobParameters);
         } catch (Exception e) {
             log.error("경제 지표 이벤트 수집 배치 작업 실행 실패: {}", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 업비트 코인 종목 패치 배치
+     * 매일 한국시간 00:03:00에 실행 (하루 1회)
+     */
+    @Async
+    @Scheduled(cron = "0 3 0 * * *", zone = "Asia/Seoul")
+    public void scheduleUpbitCoinListFetch() {
+        try {
+            log.info("업비트 코인 종목 패치 배치 작업 시작");
+            
+            upbitService.fetchAllCoinList()
+                .retryWhen(Retry.fixedDelay(3, Duration.ofSeconds(1)))
+                .doOnNext(fetchedCoinList -> {
+                    if (fetchedCoinList == null || fetchedCoinList.isEmpty()) {
+                        log.warn("업비트 코인 목록이 비어있습니다.");
+                        return;
+                    }
+                    
+                    // 코인 목록 저장
+                    Map<String, Object> result = coinService.saveAllCoinList(fetchedCoinList);
+                    log.info("업비트 코인 목록 저장 완료: {}", result);
+                    
+                    // 아이콘 다운로드
+                    try {
+                        int downloadedCount = coinImageService.downloadCoinImages(fetchedCoinList);
+                        log.info("업비트 코인 아이콘 다운로드 완료: {}개", downloadedCount);
+                    } catch (Exception e) {
+                        log.warn("업비트 코인 아이콘 다운로드 중 오류 발생: {}", e.getMessage());
+                    }
+                })
+                .doOnError(error -> log.error("업비트 코인 종목 패치 배치 작업 실패: {}", error.getMessage(), error))
+                .block(Duration.ofMinutes(10)); // 최대 10분 대기
+            
+            log.info("업비트 코인 종목 패치 배치 작업 완료");
+        } catch (Exception e) {
+            log.error("업비트 코인 종목 패치 배치 작업 실행 실패: {}", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 코인원 코인 종목 패치 배치
+     * 매일 한국시간 00:04:00에 실행 (하루 1회)
+     */
+    @Async
+    @Scheduled(cron = "0 4 0 * * *", zone = "Asia/Seoul")
+    public void scheduleCoinoneCoinListFetch() {
+        try {
+            log.info("코인원 코인 종목 패치 배치 작업 시작");
+            
+            coinoneService.fetchAllCoinList()
+                .retryWhen(Retry.fixedDelay(3, Duration.ofSeconds(1)))
+                .doOnNext(fetchedCoinList -> {
+                    if (fetchedCoinList == null || fetchedCoinList.isEmpty()) {
+                        log.warn("코인원 코인 목록이 비어있습니다.");
+                        return;
+                    }
+                    
+                    // 코인 목록 저장 (업비트에 없는 종목만 저장)
+                    Map<String, Object> result = coinService.saveAllCoinList(fetchedCoinList);
+                    log.info("코인원 코인 목록 저장 완료: {}", result);
+                    
+                    // 아이콘 다운로드
+                    try {
+                        int downloadedCount = coinImageService.downloadCoinImages(fetchedCoinList);
+                        log.info("코인원 코인 아이콘 다운로드 완료: {}개", downloadedCount);
+                    } catch (Exception e) {
+                        log.warn("코인원 코인 아이콘 다운로드 중 오류 발생: {}", e.getMessage());
+                    }
+                })
+                .doOnError(error -> log.error("코인원 코인 종목 패치 배치 작업 실패: {}", error.getMessage(), error))
+                .block(Duration.ofMinutes(10)); // 최대 10분 대기
+            
+            log.info("코인원 코인 종목 패치 배치 작업 완료");
+        } catch (Exception e) {
+            log.error("코인원 코인 종목 패치 배치 작업 실행 실패: {}", e.getMessage(), e);
         }
     }
 }

@@ -4,6 +4,7 @@ import com.bitreiver.fetch_server.domain.user.dto.*;
 import com.bitreiver.fetch_server.domain.user.service.UserService;
 import com.bitreiver.fetch_server.domain.trading.service.TradingHistoryService;
 import com.bitreiver.fetch_server.domain.profit.service.TradingProfitService;
+import com.bitreiver.fetch_server.domain.sync.service.SyncService;
 import com.bitreiver.fetch_server.domain.exchange.enums.ExchangeType;
 import com.bitreiver.fetch_server.global.common.exception.CustomException;
 import com.bitreiver.fetch_server.global.common.exception.ErrorCode;
@@ -14,6 +15,7 @@ import io.swagger.v3.oas.annotations.enums.ParameterIn;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -21,6 +23,7 @@ import java.time.LocalDateTime;
 import java.util.*;
 import java.util.UUID;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/user")
 @RequiredArgsConstructor
@@ -30,6 +33,7 @@ public class UserController {
     private final UserService userService;
     private final TradingHistoryService tradingHistoryService;
     private final TradingProfitService tradingProfitService;
+    private final SyncService syncService;
     
     @Operation(summary = "회원가입", description = "새로운 사용자를 등록합니다. 로컬 가입 시 비밀번호가 필수입니다.")
     @ApiResponses(value = {
@@ -120,16 +124,21 @@ public class UserController {
                 exchangeType = ExchangeType.fromName(exchangeProviderStr.toUpperCase());
             } catch (IllegalArgumentException e) {
                 throw new CustomException(ErrorCode.INVALID_EXCHANGE_PROVIDER, 
-                    "잘못된 거래소명입니다. UPBIT, BITHUMB, BINANCE, OKX 중 하나를 입력해주세요.");
+                    "잘못된 거래소명입니다. UPBIT, BITHUMB, COINONE, BINANCE, OKX 중 하나를 입력해주세요.");
             }
             
-            // 사용자의 마지막 거래내역 업데이트 시간 조회
-            LocalDateTime startTime = userService.getUser(userId)
-                .map(com.bitreiver.fetch_server.domain.user.entity.User::getLastTradingHistoryUpdateAt)
-                .orElse(null);
+            // 사용자 조회
+            com.bitreiver.fetch_server.domain.user.entity.User user = userService.getUser(userId)
+                .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
             
-            // 최초 동기화 여부 판단
-            boolean isInitial = startTime == null;
+            // 거래소별 마지막 거래내역 업데이트 시간 조회 (NULL이면 2017-01-01 반환)
+            LocalDateTime startTime = user.getLastTradingHistoryUpdateAtByExchange(exchangeProviderStr);
+            
+            // 최초 동기화 여부 판단 (해당 거래소의 마지막 업데이트 시간이 NULL인지 확인)
+            boolean isInitial = user.isInitialSyncByExchange(exchangeProviderStr);
+            
+            log.info("updateTradingHistory - userId: {}, exchange: {}, startTime: {}, isInitial: {}", 
+                userId, exchangeProviderStr, startTime, isInitial);
             
             // 거래내역 조회
             List<Map<String, Object>> tradingHisties = tradingHistoryService.getTradingHistories(
@@ -162,11 +171,17 @@ public class UserController {
             Map<String, Object> allTradingHistoriesData = 
                 tradingHistoryService.getAllTradingHistoriesByUserFormattedAsMap(userId);
             
-            // 매매내역 업데이트가 성공적으로 완료되었으므로 업데이트 시간 갱신
-            userService.updateUserTradingHistoryUpdatedAt(userId);
+            // 매매내역 업데이트가 성공적으로 완료되었으므로 해당 거래소의 업데이트 시간 갱신
+            userService.updateUserTradingHistoryUpdatedAt(userId, exchangeProviderStr);
             
             Map<String, Object> responseData = new java.util.HashMap<>(allTradingHistoriesData);
             responseData.put("saved_count", savedHistories.size());
+            
+            // 새로 저장된 TradingHistory ID 목록 추가 (매매일지 자동 생성용)
+            List<Integer> savedIds = savedHistories.stream()
+                .map(com.bitreiver.fetch_server.domain.trading.entity.TradingHistory::getId)
+                .toList();
+            responseData.put("saved_ids", savedIds);
             
             if (profitCalculationResult != null) {
                 responseData.put("profit_calculation", profitCalculationResult);
@@ -181,5 +196,38 @@ public class UserController {
             throw new CustomException(ErrorCode.INTERNAL_ERROR, 
                 "거래내역 업데이트 중 오류가 발생했습니다: " + e.getMessage());
         }
+    }
+    
+    @Operation(
+        summary = "거래내역 업데이트 (비동기)", 
+        description = "거래소 API에서 거래내역을 비동기로 조회하여 저장하고 수익률을 계산합니다.\n\n" +
+                     "즉시 응답을 반환하고, 완료 시 콜백 URL로 결과를 전송합니다."
+    )
+    @ApiResponses(value = {
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "동기화 시작됨"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "잘못된 요청"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "500", description = "서버 내부 오류")
+    })
+    @PostMapping("/updateTradingHistory/async")
+    public ResponseEntity<ApiResponse<Object>> updateTradingHistoryAsync(
+            @RequestBody UpdateTradingHistoryAsyncRequest request) {
+        
+        UUID userId = UUID.fromString(request.getUserId());
+        List<String> exchanges = request.getExchanges();
+        String callbackUrl = request.getCallbackUrl();
+        
+        log.info("비동기 거래내역 동기화 요청: userId={}, exchanges={}, callbackUrl={}", 
+            userId, exchanges, callbackUrl);
+        
+        // 비동기 처리 시작 (즉시 반환)
+        syncService.syncTradingHistoryAsync(userId, exchanges, callbackUrl);
+        
+        return ResponseEntity.ok(ApiResponse.success(
+            Map.of(
+                "status", "PROCESSING", 
+                "user_id", userId.toString(),
+                "exchanges", exchanges
+            ),
+            "거래내역 동기화가 시작되었습니다. 완료 시 콜백 URL로 결과가 전송됩니다."));
     }
 }
