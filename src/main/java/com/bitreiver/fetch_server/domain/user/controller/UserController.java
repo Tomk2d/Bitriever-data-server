@@ -137,9 +137,6 @@ public class UserController {
             // 최초 동기화 여부 판단 (해당 거래소의 마지막 업데이트 시간이 NULL인지 확인)
             boolean isInitial = user.isInitialSyncByExchange(exchangeProviderStr);
             
-            log.info("updateTradingHistory - userId: {}, exchange: {}, startTime: {}, isInitial: {}", 
-                userId, exchangeProviderStr, startTime, isInitial);
-            
             // 거래내역 조회
             List<Map<String, Object>> tradingHisties = tradingHistoryService.getTradingHistories(
                 userId, exchangeProviderStr, startTime);
@@ -215,9 +212,6 @@ public class UserController {
         UUID userId = UUID.fromString(request.getUserId());
         List<String> exchanges = request.getExchanges();
         String callbackUrl = request.getCallbackUrl();
-        
-        log.info("비동기 거래내역 동기화 요청: userId={}, exchanges={}, callbackUrl={}", 
-            userId, exchanges, callbackUrl);
         
         // 비동기 처리 시작 (즉시 반환)
         syncService.syncTradingHistoryAsync(userId, exchanges, callbackUrl);

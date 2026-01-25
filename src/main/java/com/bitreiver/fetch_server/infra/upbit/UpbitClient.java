@@ -5,6 +5,7 @@ import io.jsonwebtoken.security.Keys;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -135,6 +136,36 @@ public class UpbitClient {
         }
     }
     
+    
+    /**
+     * 일봉 캔들 데이터 조회 (공개 API)
+     * 
+     * @param market 마켓 코드 (예: KRW-BTC)
+     * @param to 마지막 캔들 시각 (ISO 8601 형식, 예: 2024-01-01T00:00:00)
+     * @param count 캔들 개수 (최대 200)
+     * @return 캔들 데이터 리스트
+     */
+    public Mono<List<Map<String, Object>>> getDailyCandles(String market, String to, int count) {
+        try {
+            UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(baseUrl + "/v1/candles/days")
+                .queryParam("market", market)
+                .queryParam("count", Math.min(count, 200));
+            
+            if (to != null && !to.isEmpty()) {
+                builder.queryParam("to", to);
+            }
+            
+            return upbitWebClient.get()
+                .uri(builder.build().toUri())
+                .retrieve()
+                .bodyToMono(new ParameterizedTypeReference<List<Map<String, Object>>>() {})
+                .doOnError(error -> log.error("Upbit 일봉 캔들 조회 실패 - market: {}, error: {}", market, error.getMessage()));
+                
+        } catch (Exception e) {
+            log.error("Upbit 일봉 캔들 조회 중 에러 발생: {}", e.getMessage(), e);
+            return Mono.error(e);
+        }
+    }
     
     /**
      * Upbit 공식 예제에 따른 쿼리 스트링 생성

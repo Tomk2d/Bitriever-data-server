@@ -1,5 +1,9 @@
 package com.bitreiver.fetch_server.domain.coinone.service;
 
+import com.bitreiver.fetch_server.domain.coin.entity.Coin;
+import com.bitreiver.fetch_server.domain.coin.repository.CoinRepository;
+import com.bitreiver.fetch_server.domain.price.entity.CoinPriceDay;
+import com.bitreiver.fetch_server.domain.price.repository.CoinPriceDayRepository;
 import com.bitreiver.fetch_server.global.common.exception.CustomException;
 import com.bitreiver.fetch_server.global.common.exception.ErrorCode;
 import com.bitreiver.fetch_server.global.util.TimeUtil;
@@ -15,11 +19,16 @@ import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @Slf4j
 @Service
@@ -28,6 +37,11 @@ public class CoinoneServiceImpl implements CoinoneService {
     
     private final ObjectMapper objectMapper;
     private final CoinoneClient coinoneClient;
+    private final CoinRepository coinRepository;
+    private final CoinPriceDayRepository coinPriceDayRepository;
+    
+    private static final LocalDateTime DEFAULT_START_DATE = LocalDateTime.of(2017, 1, 1, 0, 0);
+    private static final ZoneId KST = ZoneId.of("Asia/Seoul");
     
     @Override
     public Mono<List<Map<String, Object>>> fetchAllCoinList() {
@@ -96,7 +110,6 @@ public class CoinoneServiceImpl implements CoinoneService {
                         }
                     }
                     
-                    log.info("코인원 코인 목록 조회 완료: {}개", coinList.size());
                     return coinList;
                 })
                 .doOnError(error -> log.error("fetchAllCoinList - API 호출 중 에러 발생: {}", error.getMessage(), error))
@@ -182,7 +195,6 @@ public class CoinoneServiceImpl implements CoinoneService {
                         
                         // result가 "success"이면 자격증명 유효
                         if ("success".equals(result)) {
-                            log.info("코인원 자격증명 검증 성공");
                             return true;
                         } else {
                             // 에러 코드 확인
@@ -217,20 +229,15 @@ public class CoinoneServiceImpl implements CoinoneService {
     @Override
     public Mono<List<Map<String, Object>>> fetchAllCompletedOrders(String accessToken, String secretKey, LocalDateTime fromTime, LocalDateTime toTime) {
         try {
-            log.info("fetchAllCompletedOrders 호출 - fromTime: {}, toTime: {}", fromTime, toTime);
-            
             if (fromTime == null) {
                 fromTime = LocalDateTime.of(2017, 11, 1, 0, 0);
-                log.info("fromTime이 null이므로 기본값 설정: {}", fromTime);
             }
             if (toTime == null) {
                 toTime = TimeUtil.getCurrentKoreaTime();
-                log.info("toTime이 null이므로 현재 시간 설정: {}", toTime);
             }
             
             // 시간 범위를 90일씩 나눠서 조회
             List<Long[]> timeRanges = TimeUtil.getCoinoneTimeRanges(fromTime, toTime);
-            log.info("시간 범위 개수: {}, fromTime: {}, toTime: {}", timeRanges.size(), fromTime, toTime);
             
             List<Map<String, Object>> allCompletedOrders = new ArrayList<>();
             
@@ -254,7 +261,6 @@ public class CoinoneServiceImpl implements CoinoneService {
                 }
             }
             
-            log.info("코인원 거래 내역 조회 완료: {}개", allCompletedOrders.size());
             return Mono.just(allCompletedOrders);
         } catch (CustomException e) {
             log.error("fetchAllCompletedOrders - {}", e.getMessage());
@@ -391,7 +397,6 @@ public class CoinoneServiceImpl implements CoinoneService {
                                     }
                                 }
                                 
-                                log.info("코인원 계정 잔고 조회 완료: {}개", accounts.size());
                                 return Mono.just(accounts);
                             }
                         }
@@ -460,6 +465,242 @@ public class CoinoneServiceImpl implements CoinoneService {
         } catch (Exception e) {
             log.error("코인원 잔고 데이터 변환 중 오류 발생: {}", e.getMessage(), e);
             return null;
+        }
+    }
+    
+    @Override
+    public Mono<Map<String, Object>> syncAllCoinDailyCandles() {
+        try {
+            log.info("코인원 일봉 데이터 동기화 시작");
+            
+            // 코인원 활성 코인 목록 조회
+            List<Coin> coinoneCoins = coinRepository.findByExchange("COINONE");
+            List<Coin> activeCoins = coinoneCoins.stream()
+                .filter(coin -> Boolean.TRUE.equals(coin.getIsActive()))
+                .toList();
+            
+            log.info("동기화 대상 코인 수: {}", activeCoins.size());
+            
+            int successCount = 0;
+            int errorCount = 0;
+            int totalCandlesSaved = 0;
+            List<String> errorCoins = new ArrayList<>();
+            
+            for (Coin coin : activeCoins) {
+                try {
+                    int savedCount = syncCoinDailyCandles(coin);
+                    totalCandlesSaved += savedCount;
+                    successCount++;
+                    
+                    if (savedCount > 0) {
+                        log.info("[코인원] {} 동기화 성공: {}개 캔들 저장", coin.getSymbol(), savedCount);
+                    }
+                    
+                    // Rate limit: 업비트와 동일하게 100ms 대기
+                    Thread.sleep(100);
+                    
+                } catch (Exception e) {
+                    errorCount++;
+                    errorCoins.add(coin.getSymbol());
+                    log.error("[코인원] {} 동기화 실패: {}", coin.getSymbol(), e.getMessage());
+                }
+            }
+            
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("totalCoins", activeCoins.size());
+            result.put("successCount", successCount);
+            result.put("errorCount", errorCount);
+            result.put("totalCandlesSaved", totalCandlesSaved);
+            result.put("errorCoins", errorCoins);
+            
+            log.info("코인원 일봉 데이터 동기화 완료 - 전체: {}, 성공: {}, 실패: {}, 저장된 캔들: {}", 
+                activeCoins.size(), successCount, errorCount, totalCandlesSaved);
+            
+            return Mono.just(result);
+            
+        } catch (Exception e) {
+            log.error("코인원 일봉 동기화 중 에러 발생: {}", e.getMessage(), e);
+            return Mono.error(new CustomException(ErrorCode.INTERNAL_ERROR, 
+                "코인원 일봉 동기화 중 오류가 발생했습니다: " + e.getMessage()));
+        }
+    }
+    
+    /**
+     * 단일 코인의 일봉 데이터 동기화
+     */
+    private int syncCoinDailyCandles(Coin coin) {
+        // DB에서 마지막 캔들 날짜 조회
+        Optional<CoinPriceDay> latestCandle = coinPriceDayRepository
+            .findTopByCoinIdOrderByCandleDateTimeUtcDesc(coin.getId());
+        
+        LocalDateTime startDate;
+        if (latestCandle.isPresent()) {
+            // 마지막 캔들 다음 날부터 시작
+            startDate = latestCandle.get().getCandleDateTimeUtc().plusDays(1);
+        } else {
+            // 데이터가 없으면 기본 시작 날짜 사용
+            startDate = DEFAULT_START_DATE;
+        }
+        
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+        
+        // 시작 날짜가 현재보다 미래면 동기화할 데이터 없음
+        if (startDate.isAfter(now)) {
+            log.debug("{}: 동기화할 새 데이터 없음", coin.getSymbol());
+            return 0;
+        }
+        
+        log.debug("{}: {} 부터 동기화 시작", coin.getSymbol(), startDate);
+        
+        List<CoinPriceDay> allCandles = new ArrayList<>();
+        Long currentTimestamp = now.toInstant(ZoneOffset.UTC).toEpochMilli();
+        long startTimestamp = startDate.toInstant(ZoneOffset.UTC).toEpochMilli();
+        
+        // 역순으로 데이터 수집 (현재 -> 과거)
+        while (currentTimestamp > startTimestamp) {
+            Map<String, Object> response = coinoneClient.getDailyChart(
+                coin.getSymbol(), currentTimestamp, 500
+            ).block();
+            
+            if (response == null) {
+                break;
+            }
+            
+            String result = (String) response.getOrDefault("result", "");
+            if (!"success".equals(result)) {
+                log.warn("코인원 일봉 차트 조회 실패 - {}: {}", coin.getSymbol(), response.get("error_code"));
+                break;
+            }
+            
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> chartData = (List<Map<String, Object>>) response.get("chart");
+            
+            if (chartData == null || chartData.isEmpty()) {
+                break;
+            }
+            
+            for (Map<String, Object> candleData : chartData) {
+                CoinPriceDay candle = convertCoinoneToCoinPriceDay(coin, candleData);
+                if (candle != null) {
+                    // 시작 날짜 이후 데이터만 수집
+                    if (candle.getCandleDateTimeUtc().isAfter(startDate.minusDays(1))) {
+                        // 중복 체크
+                        if (!coinPriceDayRepository.existsByMarketCodeAndCandleDateTimeUtc(
+                                candle.getMarketCode(), candle.getCandleDateTimeUtc())) {
+                            allCandles.add(candle);
+                        }
+                    }
+                }
+            }
+            
+            // 가장 오래된 캔들 타임스탬프 확인
+            Map<String, Object> oldestCandle = chartData.get(chartData.size() - 1);
+            Object timestampObj = oldestCandle.get("timestamp");
+            long oldestTimestamp = toLong(timestampObj);
+            
+            if (oldestTimestamp <= startTimestamp) {
+                break;
+            }
+            
+            currentTimestamp = oldestTimestamp - 86400000L; // 하루 전으로
+            
+            // is_last가 true면 마지막 데이터
+            Boolean isLast = (Boolean) response.getOrDefault("is_last", false);
+            if (Boolean.TRUE.equals(isLast)) {
+                break;
+            }
+            
+            // 500개 미만이면 더 이상 데이터 없음
+            if (chartData.size() < 500) {
+                break;
+            }
+            
+            // Rate limit 방지 (업비트와 동일하게 100ms)
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        
+        // 데이터 저장
+        if (!allCandles.isEmpty()) {
+            coinPriceDayRepository.saveAll(allCandles);
+        }
+        
+        return allCandles.size();
+    }
+    
+    /**
+     * 코인원 차트 데이터를 CoinPriceDay 엔티티로 변환
+     */
+    private CoinPriceDay convertCoinoneToCoinPriceDay(Coin coin, Map<String, Object> candleData) {
+        try {
+            Object timestampObj = candleData.get("timestamp");
+            long timestamp = toLong(timestampObj);
+            
+            // timestamp를 LocalDateTime으로 변환
+            Instant instant = Instant.ofEpochMilli(timestamp);
+            LocalDateTime dateUtc = LocalDateTime.ofInstant(instant, ZoneOffset.UTC);
+            LocalDateTime dateKst = LocalDateTime.ofInstant(instant, KST);
+            
+            String marketCode = "KRW-" + coin.getSymbol();
+            
+            return CoinPriceDay.builder()
+                .coinId(coin.getId())
+                .marketCode(marketCode)
+                .candleDateTimeUtc(dateUtc)
+                .candleDateTimeKst(dateKst)
+                .openingPrice(toBigDecimal(candleData.get("open")))
+                .highPrice(toBigDecimal(candleData.get("high")))
+                .lowPrice(toBigDecimal(candleData.get("low")))
+                .tradePrice(toBigDecimal(candleData.get("close")))
+                .timestamp(timestamp)
+                .candleAccTradePrice(toBigDecimal(candleData.get("quote_volume")))
+                .candleAccTradeVolume(toBigDecimal(candleData.get("target_volume")))
+                .prevClosingPrice(BigDecimal.ZERO) // 코인원 API에서 제공하지 않음
+                .changePrice(BigDecimal.ZERO) // 코인원 API에서 제공하지 않음
+                .changeRate(BigDecimal.ZERO) // 코인원 API에서 제공하지 않음
+                .build();
+                
+        } catch (Exception e) {
+            log.warn("코인원 캔들 데이터 변환 실패: {}", e.getMessage());
+            return null;
+        }
+    }
+    
+    private BigDecimal toBigDecimal(Object value) {
+        if (value == null) {
+            return BigDecimal.ZERO;
+        }
+        if (value instanceof BigDecimal) {
+            return (BigDecimal) value;
+        }
+        if (value instanceof Number) {
+            return BigDecimal.valueOf(((Number) value).doubleValue());
+        }
+        try {
+            return new BigDecimal(value.toString());
+        } catch (NumberFormatException e) {
+            return BigDecimal.ZERO;
+        }
+    }
+    
+    private Long toLong(Object value) {
+        if (value == null) {
+            return 0L;
+        }
+        if (value instanceof Long) {
+            return (Long) value;
+        }
+        if (value instanceof Number) {
+            return ((Number) value).longValue();
+        }
+        try {
+            return Long.parseLong(value.toString());
+        } catch (NumberFormatException e) {
+            return 0L;
         }
     }
 }

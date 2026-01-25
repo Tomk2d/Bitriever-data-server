@@ -37,8 +37,6 @@ public class SyncServiceImpl implements SyncService {
     @Override
     @Async("syncExecutor")
     public void syncAssetsAsync(UUID userId, String callbackUrl) {
-        log.info("비동기 자산 동기화 시작: userId={}", userId);
-        
         Map<String, Object> callbackData = new HashMap<>();
         callbackData.put("user_id", userId.toString());
         callbackData.put("sync_type", "ASSET");
@@ -50,9 +48,6 @@ public class SyncServiceImpl implements SyncService {
             callbackData.put("success", true);
             callbackData.put("data", result);
             callbackData.put("message", "자산 동기화 완료");
-            
-            log.info("비동기 자산 동기화 완료: userId={}, saved={}, deleted={}", 
-                userId, result.get("total_saved_count"), result.get("total_deleted_count"));
             
         } catch (Exception e) {
             log.error("비동기 자산 동기화 실패: userId={}, error={}", userId, e.getMessage(), e);
@@ -69,8 +64,6 @@ public class SyncServiceImpl implements SyncService {
     @Override
     @Async("syncExecutor")
     public void syncTradingHistoryAsync(UUID userId, List<String> exchanges, String callbackUrl) {
-        log.info("비동기 거래내역 동기화 시작: userId={}, exchanges={}", userId, exchanges);
-        
         Map<String, Object> callbackData = new HashMap<>();
         callbackData.put("user_id", userId.toString());
         callbackData.put("sync_type", "TRADING_HISTORY");
@@ -95,9 +88,6 @@ public class SyncServiceImpl implements SyncService {
                         allSavedIds.addAll(savedIds);
                     }
                     
-                    log.info("거래내역 동기화 성공: userId={}, exchange={}, savedCount={}", 
-                        userId, exchangeStr, exchangeResult.get("saved_count"));
-                    
                 } catch (Exception e) {
                     log.error("거래내역 동기화 실패: userId={}, exchange={}, error={}", 
                         userId, exchangeStr, e.getMessage());
@@ -111,9 +101,6 @@ public class SyncServiceImpl implements SyncService {
             callbackData.put("saved_ids", allSavedIds);
             callbackData.put("message", successExchanges.size() + "개 거래소 동기화 완료" + 
                 (failedExchanges.isEmpty() ? "" : ", " + failedExchanges.size() + "개 실패"));
-            
-            log.info("비동기 거래내역 동기화 완료: userId={}, success={}, failed={}, savedIds={}", 
-                userId, successExchanges.size(), failedExchanges.size(), allSavedIds.size());
             
         } catch (Exception e) {
             log.error("비동기 거래내역 동기화 전체 실패: userId={}, error={}", userId, e.getMessage(), e);
@@ -143,9 +130,6 @@ public class SyncServiceImpl implements SyncService {
         // 거래소별 마지막 업데이트 시간 조회
         LocalDateTime startTime = user.getLastTradingHistoryUpdateAtByExchange(exchangeStr);
         boolean isInitial = user.isInitialSyncByExchange(exchangeStr);
-        
-        log.info("거래내역 동기화: userId={}, exchange={}, startTime={}, isInitial={}", 
-            userId, exchangeStr, startTime, isInitial);
         
         // 거래내역 조회
         List<Map<String, Object>> tradingHistories = tradingHistoryService.getTradingHistories(
@@ -197,9 +181,6 @@ public class SyncServiceImpl implements SyncService {
             HttpEntity<Map<String, Object>> request = new HttpEntity<>(data, headers);
             
             restTemplate.postForEntity(fullUrl, request, Void.class);
-            
-            log.info("콜백 전송 성공: url={}, userId={}, syncType={}", 
-                fullUrl, data.get("user_id"), data.get("sync_type"));
             
         } catch (Exception e) {
             log.error("콜백 전송 실패: url={}, error={}", callbackUrl, e.getMessage());
