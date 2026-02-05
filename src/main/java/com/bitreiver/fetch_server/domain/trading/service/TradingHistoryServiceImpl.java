@@ -1,5 +1,6 @@
 package com.bitreiver.fetch_server.domain.trading.service;
 
+import com.bitreiver.fetch_server.domain.bithumb.service.BithumbService;
 import com.bitreiver.fetch_server.domain.coin.entity.Coin;
 import com.bitreiver.fetch_server.domain.coin.repository.CoinRepository;
 import com.bitreiver.fetch_server.domain.coinone.service.CoinoneService;
@@ -37,21 +38,20 @@ public class TradingHistoryServiceImpl implements TradingHistoryService {
     private final ExchangeCredentialService exchangeCredentialService;
     private final UpbitService upbitService;
     private final CoinoneService coinoneService;
-    
+    private final BithumbService bithumbService;
+
     @Override
     public List<Map<String, Object>> getTradingHistories(UUID userId, String exchangeProviderStr, LocalDateTime startTime) {
         try {
             ExchangeType exchangeType = ExchangeType.fromName(exchangeProviderStr);
             Short exchangeProvider = (short) exchangeType.getCode();
-            
+
             ExchangeCredentialResponse credentials = exchangeCredentialService
                 .getCredentials(userId, exchangeProvider)
-                .orElseThrow(() -> new CustomException(ErrorCode.EXCHANGE_CREDENTIAL_NOT_FOUND, 
+                .orElseThrow(() -> new CustomException(ErrorCode.EXCHANGE_CREDENTIAL_NOT_FOUND,
                     "User not found"));
-            
-            // 거래소별 분기 처리
+
             if (exchangeType == ExchangeType.COINONE) {
-                // 코인원: 체결 주문 조회
                 LocalDateTime toTime = TimeUtil.getCurrentKoreaTime();
                 List<Map<String, Object>> completedOrders = coinoneService.fetchAllCompletedOrders(
                     credentials.getAccessKey(),
@@ -59,26 +59,36 @@ public class TradingHistoryServiceImpl implements TradingHistoryService {
                     startTime,
                     toTime
                 ).block();
-                
                 return completedOrders != null ? completedOrders : new ArrayList<>();
-            } else {
-                // 업비트: UUID 목록 조회 후 상세 조회
-                List<String> uuids = upbitService.fetchAllTradingUuids(
-                    credentials.getAccessKey(), 
-                    credentials.getSecretKey(), 
+            } else if (exchangeType == ExchangeType.BITHUMB) {
+                List<String> uuids = bithumbService.fetchAllOrderUuids(
+                    credentials.getAccessKey(),
+                    credentials.getSecretKey(),
                     startTime
                 ).block();
-                
                 if (uuids == null || uuids.isEmpty()) {
                     return new ArrayList<>();
                 }
-                
+                List<Map<String, Object>> tradingHistories = bithumbService.fetchAllTradingHistory(
+                    credentials.getAccessKey(),
+                    credentials.getSecretKey(),
+                    uuids
+                ).block();
+                return tradingHistories != null ? tradingHistories : new ArrayList<>();
+            } else {
+                List<String> uuids = upbitService.fetchAllTradingUuids(
+                    credentials.getAccessKey(),
+                    credentials.getSecretKey(),
+                    startTime
+                ).block();
+                if (uuids == null || uuids.isEmpty()) {
+                    return new ArrayList<>();
+                }
                 List<Map<String, Object>> tradingHistories = upbitService.fetchAllTradingHistory(
                     credentials.getAccessKey(),
                     credentials.getSecretKey(),
                     uuids
                 ).block();
-                
                 return tradingHistories != null ? tradingHistories : new ArrayList<>();
             }
         } catch (CustomException e) {
@@ -98,9 +108,10 @@ public class TradingHistoryServiceImpl implements TradingHistoryService {
             ExchangeType exchangeType = ExchangeType.fromName(exchangeProviderStr);
             Short exchangeCode = (short) exchangeType.getCode();
             
-            // 거래소별 분기 처리
             if (exchangeType == ExchangeType.COINONE) {
                 return processCoinoneTradingHistories(userId, exchangeCode, tradingHisties);
+            } else if (exchangeType == ExchangeType.BITHUMB) {
+                return processBithumbTradingHistories(userId, exchangeCode, tradingHisties);
             } else {
                 return processUpbitTradingHistories(userId, exchangeCode, tradingHisties);
             }
@@ -182,6 +193,73 @@ public class TradingHistoryServiceImpl implements TradingHistoryService {
             tradingHistoryList.add(history);
         }
         
+        return tradingHistoryList;
+    }
+
+    /**
+     * 빗썸 거래 내역 처리 (trades 배열 사용, market → coinId 없으면 건너뜀)
+     */
+    private List<TradingHistory> processBithumbTradingHistories(UUID userId, Short exchangeCode,
+                                                                  List<Map<String, Object>> tradingHisties) {
+        List<Coin> coins = coinRepository.findAll();
+        Map<String, Integer> coinMap = coins.stream()
+            .collect(Collectors.toMap(Coin::getMarketCode, Coin::getId, (a, b) -> a));
+
+        List<TradingHistory> tradingHistoryList = new ArrayList<>();
+
+        for (Map<String, Object> tradingHistory : tradingHisties) {
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> trades = (List<Map<String, Object>>) tradingHistory.get("trades");
+
+            if (trades == null || trades.isEmpty()) {
+                continue;
+            }
+
+            BigDecimal totalQuantity = BigDecimal.ZERO;
+            BigDecimal totalPrice = BigDecimal.ZERO;
+
+            for (Map<String, Object> trade : trades) {
+                BigDecimal volume = new BigDecimal(trade.getOrDefault("volume", "0").toString());
+                BigDecimal funds = new BigDecimal(trade.getOrDefault("funds", "0").toString());
+                totalQuantity = totalQuantity.add(volume);
+                totalPrice = totalPrice.add(funds);
+            }
+
+            BigDecimal avgPrice = totalQuantity.compareTo(BigDecimal.ZERO) > 0
+                ? totalPrice.divide(totalQuantity, 8, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO;
+
+            String side = tradingHistory.getOrDefault("side", "").toString();
+            Short tradeType = "bid".equals(side) ? (short) 0 : (short) 1;
+
+            String market = tradingHistory.getOrDefault("market", "").toString();
+            Integer coinId = coinMap.get(market);
+            if (coinId == null) {
+                log.warn("processBithumbTradingHistories - 코인을 찾을 수 없습니다 (빗썸 코인 미추적): market={}", market);
+                continue;
+            }
+
+            String uuid = tradingHistory.getOrDefault("uuid", "").toString();
+            String createdAtStr = tradingHistory.getOrDefault("created_at", "").toString();
+            LocalDateTime tradeTime = parseDateTime(createdAtStr);
+            BigDecimal fee = new BigDecimal(tradingHistory.getOrDefault("paid_fee", "0").toString());
+
+            TradingHistory history = TradingHistory.builder()
+                .userId(userId)
+                .coinId(coinId)
+                .exchangeCode(exchangeCode)
+                .tradeUuid(uuid)
+                .tradeType(tradeType)
+                .price(avgPrice)
+                .quantity(totalQuantity)
+                .totalPrice(totalPrice)
+                .fee(fee)
+                .tradeTime(tradeTime)
+                .createdAt(LocalDateTime.now())
+                .build();
+
+            tradingHistoryList.add(history);
+        }
         return tradingHistoryList;
     }
     
