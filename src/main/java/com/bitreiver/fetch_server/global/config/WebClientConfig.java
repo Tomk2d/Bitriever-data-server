@@ -32,6 +32,9 @@ public class WebClientConfig {
     @Value("${external.coinone.api.url:https://api.coinone.co.kr}")
     private String coinoneApiUrl;
 
+    @Value("${external.bithumb.api.url:https://api.bithumb.com}")
+    private String bithumbApiUrl;
+
     @Bean
     public WebClient upbitWebClient() {
         // 연결 풀 설정
@@ -247,6 +250,38 @@ public class WebClientConfig {
         
         return WebClient.builder()
             .baseUrl(coinoneApiUrl)
+            .codecs(configurer -> {
+                configurer.defaultCodecs().jackson2JsonEncoder(new Jackson2JsonEncoder(objectMapper));
+                configurer.defaultCodecs().jackson2JsonDecoder(new Jackson2JsonDecoder(objectMapper));
+                configurer.defaultCodecs().maxInMemorySize(10 * 1024 * 1024); // 10MB
+            })
+            .clientConnector(new ReactorClientHttpConnector(httpClient))
+            .build();
+    }
+
+    @Bean
+    public WebClient bithumbWebClient(ObjectMapper objectMapper) {
+        ConnectionProvider connectionProvider = ConnectionProvider.builder("bithumb")
+            .maxConnections(50)
+            .maxIdleTime(Duration.ofSeconds(10))
+            .maxLifeTime(Duration.ofSeconds(60))
+            .pendingAcquireTimeout(Duration.ofSeconds(10))
+            .evictInBackground(Duration.ofSeconds(10))
+            .build();
+
+        NioEventLoopGroup eventLoopGroup = new NioEventLoopGroup(4);
+
+        HttpClient httpClient = HttpClient.create(connectionProvider)
+            .runOn(eventLoopGroup)
+            .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 5000)
+            .responseTimeout(Duration.ofSeconds(10))
+            .doOnConnected(conn ->
+                conn.addHandlerLast(new ReadTimeoutHandler(10, TimeUnit.SECONDS))
+                    .addHandlerLast(new WriteTimeoutHandler(5, TimeUnit.SECONDS))
+            );
+
+        return WebClient.builder()
+            .baseUrl(bithumbApiUrl)
             .codecs(configurer -> {
                 configurer.defaultCodecs().jackson2JsonEncoder(new Jackson2JsonEncoder(objectMapper));
                 configurer.defaultCodecs().jackson2JsonDecoder(new Jackson2JsonDecoder(objectMapper));

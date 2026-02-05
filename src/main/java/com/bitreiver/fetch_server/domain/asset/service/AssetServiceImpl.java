@@ -7,6 +7,7 @@ import com.bitreiver.fetch_server.domain.coin.repository.CoinRepository;
 import com.bitreiver.fetch_server.domain.exchange.dto.ExchangeCredentialResponse;
 import com.bitreiver.fetch_server.domain.exchange.enums.ExchangeType;
 import com.bitreiver.fetch_server.domain.exchange.service.ExchangeCredentialService;
+import com.bitreiver.fetch_server.domain.bithumb.service.BithumbService;
 import com.bitreiver.fetch_server.domain.coinone.service.CoinoneService;
 import com.bitreiver.fetch_server.domain.upbit.service.UpbitService;
 import com.bitreiver.fetch_server.global.common.exception.CustomException;
@@ -31,13 +32,14 @@ public class AssetServiceImpl implements AssetService {
     private final CoinRepository coinRepository;
     private final UpbitService upbitService;
     private final CoinoneService coinoneService;
+    private final BithumbService bithumbService;
     private final ExchangeCredentialService exchangeCredentialService;
-    
+
     private Integer getCoinId(String symbol, String tradeBySymbol, String exchange) {
         String marketCode;
         // 거래소별 marketCode 형식이 다름
-        if ("COINONE".equals(exchange)) {
-            // 코인원: KRW-symbol 형식 (거래통화-symbol)
+        if ("COINONE".equals(exchange) || "BITHUMB".equals(exchange)) {
+            // 코인원/빗썸: KRW-symbol 형식 (거래통화-symbol). 빗썸 코인은 추적하지 않으므로 기존 Coin에서만 조회, 없으면 null
             marketCode = tradeBySymbol + "-" + symbol;
         } else {
             // 업비트 등: symbol/quoteCurrency 형식
@@ -318,6 +320,127 @@ public class AssetServiceImpl implements AssetService {
                 "자산 동기화 중 오류가 발생했습니다: " + e.getMessage());
         }
     }
+
+    @Override
+    @Transactional
+    public Map<String, Object> syncBithumbAssets(UUID userId) {
+        try {
+            ExchangeCredentialResponse credentials = exchangeCredentialService
+                .getCredentials(userId, (short) ExchangeType.BITHUMB.getCode())
+                .orElseThrow(() -> new CustomException(ErrorCode.EXCHANGE_CREDENTIAL_NOT_FOUND,
+                    "빗썸 자격증명을 찾을 수 없습니다"));
+
+            if (credentials.getAccessKey() == null || credentials.getSecretKey() == null) {
+                throw new CustomException(ErrorCode.CREDENTIALS_DECRYPTION_FAILED,
+                    "자격증명 복호화에 실패했습니다");
+            }
+
+            List<Map<String, Object>> accounts = bithumbService.fetchAccounts(
+                credentials.getAccessKey(),
+                credentials.getSecretKey()
+            ).block();
+
+            if (accounts == null || accounts.isEmpty()) {
+                log.warn("syncBithumbAssets - 빗썸 계정 잔고가 비어있습니다: user_id={}", userId);
+                List<Asset> allAssets = assetRepository.findByUserIdAndExchangeCode(
+                    userId, (short) ExchangeType.BITHUMB.getCode());
+                assetRepository.deleteAll(allAssets);
+
+                Map<String, Object> result = new HashMap<>();
+                result.put("saved_count", 0);
+                result.put("deleted_count", allAssets.size());
+                result.put("assets", new ArrayList<>());
+                return result;
+            }
+
+            List<Asset> assets = new ArrayList<>();
+            Set<String> symbolTradeByPairs = new HashSet<>();
+
+            for (Map<String, Object> account : accounts) {
+                BigDecimal balance = new BigDecimal(account.getOrDefault("balance", "0").toString());
+                if (balance.compareTo(BigDecimal.ZERO) <= 0) {
+                    continue;
+                }
+                // symbol이 P인 항목은 저장하지 않음 (빗썸 정책)
+                String symbol = account.getOrDefault("currency", "").toString();
+                if ("P".equals(symbol)) {
+                    continue;
+                }
+                Asset asset = convertAccountToAsset(account, "BITHUMB");
+                assets.add(asset);
+                symbolTradeByPairs.add(asset.getSymbol() + ":" + asset.getTradeBySymbol());
+            }
+
+            List<Asset> savedAssets = new ArrayList<>();
+            for (Asset asset : assets) {
+                Optional<Asset> existing = assetRepository.findByUserIdAndExchangeCodeAndSymbolAndTradeBySymbol(
+                    userId,
+                    (short) ExchangeType.BITHUMB.getCode(),
+                    asset.getSymbol(),
+                    asset.getTradeBySymbol()
+                );
+
+                if (existing.isPresent()) {
+                    Asset existingAsset = existing.get();
+                    existingAsset.setQuantity(asset.getQuantity());
+                    existingAsset.setLockedQuantity(asset.getLockedQuantity());
+                    existingAsset.setAvgBuyPrice(asset.getAvgBuyPrice());
+                    existingAsset.setAvgBuyPriceModified(asset.getAvgBuyPriceModified());
+                    existingAsset.setCoinId(asset.getCoinId());
+                    existingAsset.setUpdatedAt(LocalDateTime.now());
+                    savedAssets.add(assetRepository.save(existingAsset));
+                } else {
+                    asset.setUserId(userId);
+                    asset.setExchangeCode((short) ExchangeType.BITHUMB.getCode());
+                    asset.setCreatedAt(LocalDateTime.now());
+                    asset.setUpdatedAt(LocalDateTime.now());
+                    savedAssets.add(assetRepository.save(asset));
+                }
+            }
+
+            List<Asset> allAssets = assetRepository.findByUserIdAndExchangeCode(
+                userId, (short) ExchangeType.BITHUMB.getCode());
+
+            int deletedCount = 0;
+            for (Asset asset : allAssets) {
+                String pair = asset.getSymbol() + ":" + asset.getTradeBySymbol();
+                if (!symbolTradeByPairs.contains(pair)) {
+                    assetRepository.delete(asset);
+                    deletedCount++;
+                }
+            }
+
+            log.info("syncBithumbAssets - 빗썸 자산 동기화 완료: user_id={}, saved={}, deleted={}",
+                userId, savedAssets.size(), deletedCount);
+
+            List<Map<String, Object>> assetList = savedAssets.stream()
+                .map(asset -> {
+                    Map<String, Object> map = new HashMap<>();
+                    map.put("id", asset.getId());
+                    map.put("symbol", asset.getSymbol());
+                    map.put("trade_by_symbol", asset.getTradeBySymbol());
+                    map.put("quantity", asset.getQuantity().doubleValue());
+                    map.put("locked_quantity", asset.getLockedQuantity().doubleValue());
+                    map.put("avg_buy_price", asset.getAvgBuyPrice().doubleValue());
+                    return map;
+                })
+                .collect(Collectors.toList());
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("saved_count", savedAssets.size());
+            result.put("deleted_count", deletedCount);
+            result.put("assets", assetList);
+
+            return result;
+        } catch (CustomException e) {
+            log.error("syncBithumbAssets - {}", e.getMessage());
+            throw e;
+        } catch (Exception e) {
+            log.error("syncBithumbAssets - 예상치 못한 오류 발생: {}", e.getMessage(), e);
+            throw new CustomException(ErrorCode.INTERNAL_ERROR,
+                "자산 동기화 중 오류가 발생했습니다: " + e.getMessage());
+        }
+    }
     
     @Override
     @Transactional
@@ -363,6 +486,10 @@ public class AssetServiceImpl implements AssetService {
                         case COINONE:
                             log.info("syncAllExchangeAssets - 코인원 자산 동기화 시작: user_id={}", userId);
                             exchangeResult = syncCoinoneAssets(userId);
+                            break;
+                        case BITHUMB:
+                            log.info("syncAllExchangeAssets - 빗썸 자산 동기화 시작: user_id={}", userId);
+                            exchangeResult = syncBithumbAssets(userId);
                             break;
                         default:
                             log.warn("syncAllExchangeAssets - 지원하지 않는 거래소: exchange={}, user_id={}", 

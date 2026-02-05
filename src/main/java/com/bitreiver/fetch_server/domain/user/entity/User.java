@@ -57,6 +57,9 @@ public class User {
     
     @Column(name = "coinone_last_trading_history_update_at")
     private LocalDateTime coinoneLastTradingHistoryUpdateAt;
+
+    @Column(name = "bithumb_last_trading_history_update_at")
+    private LocalDateTime bithumbLastTradingHistoryUpdateAt;
     
     @Column(name = "is_active")
     @Builder.Default
@@ -81,6 +84,10 @@ public class User {
     public void updateCoinoneTradingHistorySyncTime() {
         this.coinoneLastTradingHistoryUpdateAt = LocalDateTime.now();
     }
+
+    public void updateBithumbTradingHistorySyncTime() {
+        this.bithumbLastTradingHistoryUpdateAt = LocalDateTime.now();
+    }
     
     /**
      * 거래소별 마지막 동기화 시간 조회
@@ -93,6 +100,8 @@ public class User {
             return upbitLastTradingHistoryUpdateAt != null ? upbitLastTradingHistoryUpdateAt : defaultTime;
         } else if ("COINONE".equalsIgnoreCase(exchangeType)) {
             return coinoneLastTradingHistoryUpdateAt != null ? coinoneLastTradingHistoryUpdateAt : defaultTime;
+        } else if ("BITHUMB".equalsIgnoreCase(exchangeType)) {
+            return bithumbLastTradingHistoryUpdateAt != null ? bithumbLastTradingHistoryUpdateAt : defaultTime;
         }
         return defaultTime;
     }
@@ -105,6 +114,8 @@ public class User {
             return upbitLastTradingHistoryUpdateAt == null;
         } else if ("COINONE".equalsIgnoreCase(exchangeType)) {
             return coinoneLastTradingHistoryUpdateAt == null;
+        } else if ("BITHUMB".equalsIgnoreCase(exchangeType)) {
+            return bithumbLastTradingHistoryUpdateAt == null;
         }
         return true;
     }

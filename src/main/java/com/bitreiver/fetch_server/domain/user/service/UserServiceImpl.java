@@ -172,6 +172,8 @@ public class UserServiceImpl implements UserService {
                 user.updateUpbitTradingHistorySyncTime();
             } else if ("COINONE".equalsIgnoreCase(exchangeType)) {
                 user.updateCoinoneTradingHistorySyncTime();
+            } else if ("BITHUMB".equalsIgnoreCase(exchangeType)) {
+                user.updateBithumbTradingHistorySyncTime();
             } else {
                 log.warn("updateUserTradingHistoryUpdatedAt - 알 수 없는 거래소: {}", exchangeType);
             }
