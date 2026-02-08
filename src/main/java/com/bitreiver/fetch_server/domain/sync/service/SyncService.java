@@ -17,4 +17,10 @@ public interface SyncService {
      * 완료 시 app-server로 콜백 호출
      */
     void syncTradingHistoryAsync(UUID userId, List<String> exchanges, String callbackUrl);
+
+    /**
+     * 단일 거래소 거래내역 연동 + 수익률 계산.
+     * UPBIT, BITHUMB, COINONE만 지원. 수익률 계산 실패 시 예외 throw (자격인증 등록 후 연동 플로우용).
+     */
+    Map<String, Object> updateTradingHistoryForExchange(UUID userId, String exchangeProviderStr);
 }

@@ -380,7 +380,9 @@ public class CoinoneServiceImpl implements CoinoneService {
                                 Object errorCodeObj = responseMap.get("error_code");
                                 String errorCode = errorCodeObj != null ? errorCodeObj.toString() : "";
                                 log.warn("코인원 계정 잔고 조회 실패 - result: {}, error_code: {}", result, errorCode);
-                                return Mono.just(new ArrayList<Map<String, Object>>());
+                                // 인증/키 오류(12 등) 시 빈 리스트가 아닌 예외로 연동 실패·롤백 유도
+                                String msg = "계정 잔고 조회 중 오류가 발생했습니다: 401 Unauthorized (코인원 error_code: " + errorCode + ")";
+                                return Mono.error(new CustomException(ErrorCode.INTERNAL_ERROR, msg));
                             }
                             
                             Object balancesObj = responseMap.get("balances");

@@ -4,8 +4,10 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
+import lombok.Setter;
 
 @Getter
+@Setter
 @Schema(description = "거래소 자격증명 요청")
 public class ExchangeCredentialRequest {
     @Schema(description = "거래소 타입 코드", example = "1", required = true, allowableValues = {"1", "2", "3", "11", "12", "13", "14"})

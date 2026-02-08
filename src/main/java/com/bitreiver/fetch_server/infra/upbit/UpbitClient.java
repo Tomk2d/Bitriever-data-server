@@ -2,6 +2,7 @@ package com.bitreiver.fetch_server.infra.upbit;
 
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import io.jsonwebtoken.security.WeakKeyException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
@@ -96,7 +97,13 @@ public class UpbitClient {
                 .doOnError(error -> log.error("Upbit API 요청 실패: {}", error.getMessage()));
                 
         } catch (Exception e) {
-            log.error("UpbitClient GET 요청 중 에러 발생: {}", e.getMessage(), e);
+            boolean isAuthError = e.getMessage() != null && e.getMessage().contains("JWT 토큰 생성 실패")
+                || (e.getCause() != null && e.getCause() instanceof WeakKeyException);
+            if (isAuthError) {
+                log.warn("Upbit API 인증 실패 (키 형식/길이 확인): {}", e.getMessage());
+            } else {
+                log.error("UpbitClient GET 요청 중 에러 발생: {}", e.getMessage(), e);
+            }
             return Mono.error(e);
         }
     }
@@ -130,6 +137,9 @@ public class UpbitClient {
                 .signWith(key)
                 .compact();
                 
+        } catch (WeakKeyException e) {
+            log.warn("업비트 JWT 서명 키 길이 부족 (API 키/시크릿 확인 필요): {}", e.getMessage());
+            throw new RuntimeException("JWT 토큰 생성 실패", e);
         } catch (Exception e) {
             log.error("JWT 토큰 생성 실패: {}", e.getMessage(), e);
             throw new RuntimeException("JWT 토큰 생성 실패", e);

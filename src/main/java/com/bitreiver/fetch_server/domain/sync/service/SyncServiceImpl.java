@@ -3,6 +3,8 @@ package com.bitreiver.fetch_server.domain.sync.service;
 import com.bitreiver.fetch_server.domain.asset.service.AssetService;
 import com.bitreiver.fetch_server.domain.exchange.enums.ExchangeType;
 import com.bitreiver.fetch_server.domain.profit.service.TradingProfitService;
+import com.bitreiver.fetch_server.global.common.exception.CustomException;
+import com.bitreiver.fetch_server.global.common.exception.ErrorCode;
 import com.bitreiver.fetch_server.domain.trading.entity.TradingHistory;
 import com.bitreiver.fetch_server.domain.trading.service.TradingHistoryService;
 import com.bitreiver.fetch_server.domain.user.entity.User;
@@ -114,8 +116,57 @@ public class SyncServiceImpl implements SyncService {
         sendCallback(callbackUrl, callbackData);
     }
     
+    @Override
+    public Map<String, Object> updateTradingHistoryForExchange(UUID userId, String exchangeProviderStr) {
+        User user = userService.getUser(userId)
+            .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
+
+        ExchangeType exchangeType;
+        try {
+            exchangeType = ExchangeType.fromName(exchangeProviderStr.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new CustomException(ErrorCode.INVALID_EXCHANGE_PROVIDER,
+                "잘못된 거래소명입니다. UPBIT, BITHUMB, COINONE만 지원합니다.");
+        }
+        if (exchangeType != ExchangeType.UPBIT && exchangeType != ExchangeType.BITHUMB && exchangeType != ExchangeType.COINONE) {
+            throw new CustomException(ErrorCode.INVALID_EXCHANGE_PROVIDER,
+                "지원하지 않는 거래소입니다. 업비트, 빗썸, 코인원만 지원합니다.");
+        }
+
+        return updateTradingHistoryForExchangeInternal(user, exchangeProviderStr, exchangeType);
+    }
+
     /**
-     * 단일 거래소 거래내역 동기화
+     * 단일 거래소 거래내역 동기화 (수익률 계산 실패 시 예외 throw)
+     */
+    private Map<String, Object> updateTradingHistoryForExchangeInternal(User user, String exchangeStr, ExchangeType exchangeType) {
+        UUID userId = user.getId();
+
+        LocalDateTime startTime = user.getLastTradingHistoryUpdateAtByExchange(exchangeStr);
+        boolean isInitial = user.isInitialSyncByExchange(exchangeStr);
+
+        List<Map<String, Object>> tradingHistories = tradingHistoryService.getTradingHistories(
+            userId, exchangeStr, startTime);
+
+        List<TradingHistory> processedHistories = tradingHistoryService.processTradingHistories(
+            userId, exchangeStr, tradingHistories);
+
+        List<TradingHistory> savedHistories = tradingHistoryService.saveTradingHistories(processedHistories);
+
+        if (!savedHistories.isEmpty()) {
+            tradingProfitService.calculateAndUpdateProfitLoss(userId, exchangeType.getCode(), isInitial);
+        }
+
+        userService.updateUserTradingHistoryUpdatedAt(userId, exchangeStr);
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("saved_count", savedHistories.size());
+        result.put("saved_ids", savedHistories.stream().map(TradingHistory::getId).toList());
+        return result;
+    }
+
+    /**
+     * 단일 거래소 거래내역 동기화 (비동기용 - 수익률 실패 시 로그만)
      */
     private Map<String, Object> syncSingleExchangeTradingHistory(User user, String exchangeStr) {
         UUID userId = user.getId();

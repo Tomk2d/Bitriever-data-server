@@ -197,7 +197,12 @@ public class AssetServiceImpl implements AssetService {
             log.error("syncUpbitAssets - {}", e.getMessage());
             throw e;
         } catch (Exception e) {
-            log.error("syncUpbitAssets - 예상치 못한 오류 발생: {}", e.getMessage(), e);
+            boolean isKeyError = e.getMessage() != null && e.getMessage().contains("JWT 토큰 생성 실패");
+            if (isKeyError) {
+                log.warn("syncUpbitAssets - API 키/시크릿 오류: {}", e.getMessage());
+            } else {
+                log.error("syncUpbitAssets - 예상치 못한 오류 발생: {}", e.getMessage(), e);
+            }
             throw new CustomException(ErrorCode.INTERNAL_ERROR, 
                 "자산 동기화 중 오류가 발생했습니다: " + e.getMessage());
         }
@@ -442,6 +447,25 @@ public class AssetServiceImpl implements AssetService {
         }
     }
     
+    @Override
+    @Transactional
+    public Map<String, Object> syncAssetsForExchange(UUID userId, Short exchangeProvider) {
+        ExchangeType exchangeType;
+        try {
+            exchangeType = ExchangeType.fromCode(exchangeProvider.intValue());
+        } catch (IllegalArgumentException e) {
+            throw new CustomException(ErrorCode.INVALID_EXCHANGE_PROVIDER,
+                "지원하지 않는 거래소입니다. 업비트, 빗썸, 코인원만 지원합니다.");
+        }
+        return switch (exchangeType) {
+            case UPBIT -> syncUpbitAssets(userId);
+            case COINONE -> syncCoinoneAssets(userId);
+            case BITHUMB -> syncBithumbAssets(userId);
+            default -> throw new CustomException(ErrorCode.INVALID_EXCHANGE_PROVIDER,
+                "지원하지 않는 거래소입니다. 업비트, 빗썸, 코인원만 지원합니다.");
+        };
+    }
+
     @Override
     @Transactional
     public Map<String, Object> syncAllExchangeAssets(UUID userId) {

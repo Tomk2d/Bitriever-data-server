@@ -258,7 +258,13 @@ public class UpbitServiceImpl implements UpbitService {
             log.error("fetchAccounts - {}", e.getMessage());
             return Mono.error(e);
         } catch (Exception e) {
-            log.error("fetchAccounts - 예상치 못한 오류 발생: {}", e.getMessage(), e);
+            boolean isKeyError = e.getMessage() != null && e.getMessage().contains("JWT 토큰 생성 실패")
+                || (e.getCause() != null && e.getCause().getClass().getName().contains("WeakKeyException"));
+            if (isKeyError) {
+                log.warn("fetchAccounts - API 키/시크릿 오류 (형식 또는 길이 확인): {}", e.getMessage());
+            } else {
+                log.error("fetchAccounts - 예상치 못한 오류 발생: {}", e.getMessage(), e);
+            }
             return Mono.error(new CustomException(ErrorCode.INTERNAL_ERROR, 
                 "계정 잔고 조회 중 오류가 발생했습니다: " + e.getMessage()));
         }

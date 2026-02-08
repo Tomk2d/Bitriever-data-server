@@ -8,4 +8,9 @@ public interface AssetService {
     Map<String, Object> syncCoinoneAssets(UUID userId);
     Map<String, Object> syncBithumbAssets(UUID userId);
     Map<String, Object> syncAllExchangeAssets(UUID userId);
+
+    /**
+     * 단일 거래소만 자산 동기화. UPBIT, BITHUMB, COINONE만 지원.
+     */
+    Map<String, Object> syncAssetsForExchange(UUID userId, Short exchangeProvider);
 }
