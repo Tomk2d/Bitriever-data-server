@@ -162,6 +162,17 @@ public class ExchangeCredentialServiceImpl implements ExchangeCredentialService 
                 "자격증명 삭제 중 오류가 발생했습니다: " + e.getMessage());
         }
     }
+
+    @Override
+    @Transactional
+    public void rollbackCredentialSave(UUID userId, Short exchangeProvider) {
+        boolean deleted = deleteCredentials(userId, exchangeProvider);
+        if (deleted) {
+            log.info("rollbackCredentialSave - 자격인증 등록 보상 완료: user_id={}, exchange_provider={}", userId, exchangeProvider);
+        } else {
+            log.warn("rollbackCredentialSave - 삭제할 자격인증 없음: user_id={}, exchange_provider={}", userId, exchangeProvider);
+        }
+    }
     
     @Override
     public boolean verifyCredentials(UUID userId, Short exchangeProvider) {

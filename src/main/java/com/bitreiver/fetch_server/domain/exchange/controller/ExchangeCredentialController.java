@@ -2,8 +2,12 @@ package com.bitreiver.fetch_server.domain.exchange.controller;
 
 import com.bitreiver.fetch_server.domain.exchange.dto.ExchangeCredentialRequest;
 import com.bitreiver.fetch_server.domain.exchange.dto.ExchangeCredentialResponse;
+import com.bitreiver.fetch_server.domain.exchange.dto.RegisterAndSyncJobResult;
+import com.bitreiver.fetch_server.domain.exchange.dto.RegisterAndSyncRequest;
 import com.bitreiver.fetch_server.domain.exchange.enums.ExchangeType;
 import com.bitreiver.fetch_server.domain.exchange.service.ExchangeCredentialService;
+import com.bitreiver.fetch_server.domain.exchange.service.RegisterAndSyncAsyncRunner;
+import com.bitreiver.fetch_server.domain.exchange.service.RegisterAndSyncService;
 import com.bitreiver.fetch_server.global.common.exception.CustomException;
 import com.bitreiver.fetch_server.global.common.exception.ErrorCode;
 import com.bitreiver.fetch_server.global.common.response.ApiResponse;
@@ -13,10 +17,12 @@ import io.swagger.v3.oas.annotations.enums.ParameterIn;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -26,7 +32,42 @@ import java.util.UUID;
 public class ExchangeCredentialController {
     
     private final ExchangeCredentialService credentialService;
+    private final RegisterAndSyncService registerAndSyncService;
+    private final RegisterAndSyncAsyncRunner registerAndSyncAsyncRunner;
     
+    @Operation(summary = "거래소 자격인증 등록 및 연동 (비동기)", description = "자격인증 저장 후 해당 거래소만 자산·매매내역·수익률 연동을 백그라운드에서 수행합니다. 즉시 202와 job_id를 반환하며, 결과는 GET /register-status 로 폴링하세요.")
+    @ApiResponses(value = {
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "202", description = "처리 시작됨 (job_id로 상태 조회)"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "입력 데이터 검증 실패")
+    })
+    @PostMapping("/register-and-sync/async")
+    public ResponseEntity<ApiResponse<Map<String, String>>> registerAndSyncAsync(@RequestBody RegisterAndSyncRequest request) {
+        UUID userId = UUID.fromString(request.getUserId());
+        ExchangeCredentialRequest credReq = new ExchangeCredentialRequest();
+        credReq.setExchangeProvider(request.getExchangeProvider());
+        credReq.setAccessKey(request.getAccessKey());
+        credReq.setSecretKey(request.getSecretKey());
+        String jobId = registerAndSyncService.startRegisterAndSyncAsync(userId, credReq);
+        registerAndSyncAsyncRunner.runRegisterAndSync(jobId, userId, credReq);
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+            .body(ApiResponse.success(Map.of("job_id", jobId), "등록 및 연동이 시작되었습니다. 상태는 register-status로 조회하세요."));
+    }
+
+    @Operation(summary = "등록·연동 작업 상태 조회 (폴링용)", description = "job_id로 비동기 등록·연동 결과를 조회합니다.")
+    @ApiResponses(value = {
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공 (status: PROCESSING | SUCCESS | FAILED)"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "job_id 없음 또는 만료")
+    })
+    @GetMapping("/register-status")
+    public ResponseEntity<ApiResponse<RegisterAndSyncJobResult>> getRegisterStatus(
+            @RequestParam("job_id") String jobId) {
+        RegisterAndSyncJobResult result = registerAndSyncService.getRegisterStatus(jobId);
+        if (result == null) {
+            throw new CustomException(ErrorCode.NOT_FOUND, "해당 작업을 찾을 수 없거나 만료되었습니다.");
+        }
+        return ResponseEntity.ok(ApiResponse.success(result, "상태 조회 완료"));
+    }
+
     @Operation(summary = "거래소 자격증명 저장/업데이트", description = "거래소 API 키를 암호화하여 저장하거나 업데이트합니다. 사용자의 connected_exchanges 목록도 자동으로 업데이트됩니다.")
     @ApiResponses(value = {
         @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "저장 성공"),
