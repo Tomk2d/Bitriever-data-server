@@ -40,7 +40,7 @@ class BinanceLongShortBatchTestControllerTest {
             new TypeReference<List<BinanceLongShortRatioResponse>>() {};
 
     @Test
-    @DisplayName("수동 배치 트리거 API - 모든 period (1h, 4h, 12h, 1d) 테스트 및 Redis 캐싱 검증 (거래량 기반)")
+    @DisplayName("수동 배치 트리거 API - 모든 period (1h, 4h, 12h, 1d) 테스트 및 Redis 캐싱 검증 (상위 트레이더 포지션 비중)")
     void triggerBinanceLongShortRatio_allPeriods_success() throws Exception {
         // 활성 코인 목록 조회 (테스트 검증용)
         List<Coin> activeCoins = coinRepository.findByIsActiveTrue();
@@ -87,7 +87,7 @@ class BinanceLongShortBatchTestControllerTest {
                     assertNotNull(data.get(0).getSymbol(), 
                             String.format("period=%s, symbol=%s: 데이터에 symbol이 없습니다.", period, symbol));
                     
-                    // 거래량 기반 데이터 검증
+                    // 포지션 비중 데이터 검증 (longAccount + shortAccount ≈ 1)
                     BinanceLongShortRatioResponse firstData = data.get(0);
                     if (firstData.getLongAccount() != null && firstData.getShortAccount() != null) {
                         try {
