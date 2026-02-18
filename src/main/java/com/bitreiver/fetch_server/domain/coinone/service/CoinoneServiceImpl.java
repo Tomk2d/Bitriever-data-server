@@ -2,8 +2,10 @@ package com.bitreiver.fetch_server.domain.coinone.service;
 
 import com.bitreiver.fetch_server.domain.coin.entity.Coin;
 import com.bitreiver.fetch_server.domain.coin.repository.CoinRepository;
+import com.bitreiver.fetch_server.domain.price.dto.CoinPriceDayTodayDto;
 import com.bitreiver.fetch_server.domain.price.entity.CoinPriceDay;
 import com.bitreiver.fetch_server.domain.price.repository.CoinPriceDayRepository;
+import com.bitreiver.fetch_server.global.cache.RedisCacheService;
 import com.bitreiver.fetch_server.global.common.exception.CustomException;
 import com.bitreiver.fetch_server.global.common.exception.ErrorCode;
 import com.bitreiver.fetch_server.global.util.TimeUtil;
@@ -20,6 +22,7 @@ import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
@@ -39,6 +42,7 @@ public class CoinoneServiceImpl implements CoinoneService {
     private final CoinoneClient coinoneClient;
     private final CoinRepository coinRepository;
     private final CoinPriceDayRepository coinPriceDayRepository;
+    private final RedisCacheService redisCacheService;
     
     private static final LocalDateTime DEFAULT_START_DATE = LocalDateTime.of(2017, 1, 1, 0, 0);
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
@@ -554,7 +558,8 @@ public class CoinoneServiceImpl implements CoinoneService {
         
         log.debug("{}: {} 부터 동기화 시작", coin.getSymbol(), startDate);
         
-        List<CoinPriceDay> allCandles = new ArrayList<>();
+        LocalDate todayUtc = LocalDate.now(ZoneOffset.UTC);
+        List<CoinPriceDay> toDbCandles = new ArrayList<>();
         Long currentTimestamp = now.toInstant(ZoneOffset.UTC).toEpochMilli();
         long startTimestamp = startDate.toInstant(ZoneOffset.UTC).toEpochMilli();
         
@@ -583,15 +588,22 @@ public class CoinoneServiceImpl implements CoinoneService {
             
             for (Map<String, Object> candleData : chartData) {
                 CoinPriceDay candle = convertCoinoneToCoinPriceDay(coin, candleData);
-                if (candle != null) {
-                    // 시작 날짜 이후 데이터만 수집
-                    if (candle.getCandleDateTimeUtc().isAfter(startDate.minusDays(1))) {
-                        // 중복 체크
-                        if (!coinPriceDayRepository.existsByMarketCodeAndCandleDateTimeUtc(
-                                candle.getMarketCode(), candle.getCandleDateTimeUtc())) {
-                            allCandles.add(candle);
-                        }
+                if (candle == null || !candle.getCandleDateTimeUtc().isAfter(startDate.minusDays(1))) {
+                    continue;
+                }
+                LocalDate candleDate = candle.getCandleDateTimeUtc().toLocalDate();
+                if (candleDate.isBefore(todayUtc)) {
+                    // 확정된 이전 날짜 → DB 저장
+                    if (!coinPriceDayRepository.existsByMarketCodeAndCandleDateTimeUtc(
+                            candle.getMarketCode(), candle.getCandleDateTimeUtc())) {
+                        toDbCandles.add(candle);
                     }
+                } else if (candleDate.equals(todayUtc)) {
+                    // 당일 봉 → Redis만 저장 (DB 미저장)
+                    CoinPriceDayTodayDto todayDto = toTodayDto(coin, candle);
+                    String redisKey = CoinPriceDayTodayDto.redisKey("COINONE", candle.getMarketCode());
+                    redisCacheService.set(redisKey, todayDto, CoinPriceDayTodayDto.REDIS_TTL_SECONDS);
+                    log.debug("{}: 당일 봉 Redis 저장", candle.getMarketCode());
                 }
             }
             
@@ -626,12 +638,34 @@ public class CoinoneServiceImpl implements CoinoneService {
             }
         }
         
-        // 데이터 저장
-        if (!allCandles.isEmpty()) {
-            coinPriceDayRepository.saveAll(allCandles);
+        // 확정 캔들만 DB 저장
+        if (!toDbCandles.isEmpty()) {
+            coinPriceDayRepository.saveAll(toDbCandles);
+            log.info("{}: {}개 캔들 DB 저장 완료", coin.getMarketCode(), toDbCandles.size());
         }
         
-        return allCandles.size();
+        return toDbCandles.size();
+    }
+    
+    private CoinPriceDayTodayDto toTodayDto(Coin coin, CoinPriceDay candle) {
+        return CoinPriceDayTodayDto.builder()
+            .coinId(coin.getId())
+            .exchange("COINONE")
+            .marketCode(candle.getMarketCode())
+            .candleDateTimeUtc(candle.getCandleDateTimeUtc())
+            .candleDateTimeKst(candle.getCandleDateTimeKst())
+            .openingPrice(candle.getOpeningPrice())
+            .highPrice(candle.getHighPrice())
+            .lowPrice(candle.getLowPrice())
+            .tradePrice(candle.getTradePrice())
+            .timestamp(candle.getTimestamp())
+            .candleAccTradePrice(candle.getCandleAccTradePrice())
+            .candleAccTradeVolume(candle.getCandleAccTradeVolume())
+            .prevClosingPrice(candle.getPrevClosingPrice())
+            .changePrice(candle.getChangePrice())
+            .changeRate(candle.getChangeRate())
+            .convertedTradePrice(candle.getConvertedTradePrice())
+            .build();
     }
     
     /**

@@ -17,6 +17,8 @@ import org.springframework.stereotype.Component;
 import reactor.util.retry.Retry;
 
 import java.time.Duration;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 
 @Slf4j
@@ -208,15 +210,15 @@ public class BatchScheduler {
 
     /**
      * 업비트 코인 종목 패치 배치
-     * 매일 한국시간 00:03:00에 실행 (하루 1회)
+     * UTC 00:01:00에 실행 (하루 1회). 성공 시 일봉 동기화를 체인으로 실행.
      */
     @Async
-    @Scheduled(cron = "0 3 0 * * *", zone = "Asia/Seoul")
+    @Scheduled(cron = "0 1 0 * * *", zone = "UTC")
     public void scheduleUpbitCoinListFetch() {
         try {
             log.info("업비트 코인 종목 패치 배치 작업 시작");
             
-            upbitService.fetchAllCoinList()
+            List<Map<String, Object>> savedList = upbitService.fetchAllCoinList()
                 .retryWhen(Retry.fixedDelay(3, Duration.ofSeconds(1)))
                 .doOnNext(fetchedCoinList -> {
                     if (fetchedCoinList == null || fetchedCoinList.isEmpty()) {
@@ -237,7 +239,18 @@ public class BatchScheduler {
                     }
                 })
                 .doOnError(error -> log.error("업비트 코인 종목 패치 배치 작업 실패: {}", error.getMessage(), error))
+                .map(list -> list != null ? list : Collections.<Map<String, Object>>emptyList())
                 .block(Duration.ofMinutes(10)); // 최대 10분 대기
+            
+            if (savedList != null && !savedList.isEmpty()) {
+                log.info("업비트 일봉 동기화 시작 (종목 패치 성공 후 체인)");
+                try {
+                    upbitService.syncAllCoinDailyCandles().block(Duration.ofMinutes(30));
+                    log.info("업비트 일봉 동기화 완료");
+                } catch (Exception e) {
+                    log.error("업비트 일봉 동기화 실패: {}", e.getMessage(), e);
+                }
+            }
             
             log.info("업비트 코인 종목 패치 배치 작업 완료");
         } catch (Exception e) {
@@ -247,15 +260,15 @@ public class BatchScheduler {
 
     /**
      * 코인원 코인 종목 패치 배치
-     * 매일 한국시간 00:04:00에 실행 (하루 1회)
+     * UTC 00:03:00에 실행 (하루 1회). 성공 시 일봉 동기화를 체인으로 실행.
      */
     @Async
-    @Scheduled(cron = "0 4 0 * * *", zone = "Asia/Seoul")
+    @Scheduled(cron = "0 3 0 * * *", zone = "UTC")
     public void scheduleCoinoneCoinListFetch() {
         try {
             log.info("코인원 코인 종목 패치 배치 작업 시작");
             
-            coinoneService.fetchAllCoinList()
+            List<Map<String, Object>> savedList = coinoneService.fetchAllCoinList()
                 .retryWhen(Retry.fixedDelay(3, Duration.ofSeconds(1)))
                 .doOnNext(fetchedCoinList -> {
                     if (fetchedCoinList == null || fetchedCoinList.isEmpty()) {
@@ -276,7 +289,18 @@ public class BatchScheduler {
                     }
                 })
                 .doOnError(error -> log.error("코인원 코인 종목 패치 배치 작업 실패: {}", error.getMessage(), error))
+                .map(list -> list != null ? list : Collections.<Map<String, Object>>emptyList())
                 .block(Duration.ofMinutes(10)); // 최대 10분 대기
+            
+            if (savedList != null && !savedList.isEmpty()) {
+                log.info("코인원 일봉 동기화 시작 (종목 패치 성공 후 체인)");
+                try {
+                    coinoneService.syncAllCoinDailyCandles().block(Duration.ofMinutes(30));
+                    log.info("코인원 일봉 동기화 완료");
+                } catch (Exception e) {
+                    log.error("코인원 일봉 동기화 실패: {}", e.getMessage(), e);
+                }
+            }
             
             log.info("코인원 코인 종목 패치 배치 작업 완료");
         } catch (Exception e) {
