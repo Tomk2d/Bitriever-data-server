@@ -107,6 +107,13 @@ public class BatchScheduler {
      */
     @Scheduled(cron = "0 15 0 * * *")
     public void scheduleFetchFearGreedToDb() {
+        runFetchFearGreedToDbManual();
+    }
+
+    /**
+     * 공포/탐욕 지수 DB 증분 저장 배치 수동 실행 (내부 API용)
+     */
+    public void runFetchFearGreedToDbManual() {
         try {
             log.info("공포/탐욕 지수 DB 증분 저장 배치 시작");
             JobParameters jobParameters = new JobParametersBuilder()
@@ -116,6 +123,7 @@ public class BatchScheduler {
             jobLauncher.run(fetchRecentFearGreedToDbJob, jobParameters);
         } catch (Exception e) {
             log.error("공포/탐욕 지수 DB 증분 저장 배치 작업 실행 실패: {}", e.getMessage(), e);
+            throw new RuntimeException(e);
         }
     }
 
@@ -169,6 +177,13 @@ public class BatchScheduler {
      */
     @Scheduled(cron = "0 1 0 * * *")
     public void scheduleBinanceLongShort1d() {
+        runBinanceLongShort1dManual();
+    }
+
+    /**
+     * Binance Long/Short 1d 배치 수동 실행 (내부 API용)
+     */
+    public void runBinanceLongShort1dManual() {
         runBinanceLongShortJob("1d", 30L);
     }
 
@@ -215,6 +230,13 @@ public class BatchScheduler {
     @Async
     @Scheduled(cron = "0 1 0 * * *", zone = "UTC")
     public void scheduleUpbitCoinListFetch() {
+        runUpbitCoinListFetchManual();
+    }
+
+    /**
+     * 업비트 코인 종목 패치 + 일봉 동기화 수동 실행 (내부 API용)
+     */
+    public void runUpbitCoinListFetchManual() {
         try {
             log.info("업비트 코인 종목 패치 배치 작업 시작");
             
@@ -255,6 +277,7 @@ public class BatchScheduler {
             log.info("업비트 코인 종목 패치 배치 작업 완료");
         } catch (Exception e) {
             log.error("업비트 코인 종목 패치 배치 작업 실행 실패: {}", e.getMessage(), e);
+            throw new RuntimeException(e);
         }
     }
 
@@ -265,6 +288,13 @@ public class BatchScheduler {
     @Async
     @Scheduled(cron = "0 3 0 * * *", zone = "UTC")
     public void scheduleCoinoneCoinListFetch() {
+        runCoinoneCoinListFetchManual();
+    }
+
+    /**
+     * 코인원 코인 종목 패치 + 일봉 동기화 수동 실행 (내부 API용)
+     */
+    public void runCoinoneCoinListFetchManual() {
         try {
             log.info("코인원 코인 종목 패치 배치 작업 시작");
             
@@ -305,6 +335,7 @@ public class BatchScheduler {
             log.info("코인원 코인 종목 패치 배치 작업 완료");
         } catch (Exception e) {
             log.error("코인원 코인 종목 패치 배치 작업 실행 실패: {}", e.getMessage(), e);
+            throw new RuntimeException(e);
         }
     }
 
