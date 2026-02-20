@@ -105,7 +105,7 @@ public class BatchScheduler {
      * 공포/탐욕 지수 DB 증분 저장 배치
      * UTC 00:15에 실행 - 일주일치 데이터 중 DB에 없는 날짜만 저장
      */
-    @Scheduled(cron = "0 15 0 * * *")
+    @Scheduled(cron = "0 15 0 * * *", zone = "UTC")
     public void scheduleFetchFearGreedToDb() {
         try {
             log.info("공포/탐욕 지수 DB 증분 저장 배치 시작");
