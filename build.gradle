@@ -54,6 +54,13 @@ dependencies {
 	// Jsoup (HTML 파싱)
     implementation 'org.jsoup:jsoup:1.17.2'
 	
+	// Actuator & Prometheus metrics
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
+	
+	// Loki (로그 수집)
+	runtimeOnly 'com.github.loki4j:loki-logback-appender:1.5.1'
+	
 	compileOnly 'org.projectlombok:lombok'
 	runtimeOnly 'org.postgresql:postgresql'
 	annotationProcessor 'org.projectlombok:lombok'
