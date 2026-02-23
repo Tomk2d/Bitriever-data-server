@@ -163,6 +163,9 @@ public class RegisterAndSyncServiceImpl implements RegisterAndSyncService {
 
     private String toUserFriendlyMessage(String technicalMessage) {
         if (technicalMessage == null) return "연동에 실패했습니다.";
+        if (technicalMessage.contains("403") || technicalMessage.contains("Forbidden")) {
+            return "API key 등록 시 IP 주소와 허용 권한을 안내사항과 동일하게 설정해주세요.";
+        }
         if (technicalMessage.contains("JWT 토큰 생성 실패")
                 || technicalMessage.contains("401 Unauthorized")
                 || technicalMessage.contains("401 ")) {
