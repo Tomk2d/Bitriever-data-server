@@ -33,7 +33,6 @@ public class EconomicEventServiceImpl implements EconomicEventService {
     private final RedisCacheService redisCacheService;
     
     private static final String EVENT_GROUP_ECONOMIC = "ECONOMIC";
-    private static final String START_YEAR_MONTH = "2026-01";
     private static final DateTimeFormatter YEAR_MONTH_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM");
 
     private static final String REDIS_KEY_PREFIX = "economic-events:upcoming:";
@@ -103,10 +102,9 @@ public class EconomicEventServiceImpl implements EconomicEventService {
 
     @Override
     public int fetchAndSaveAllMonthlyData() {
-
-        YearMonth startYearMonth = YearMonth.parse(START_YEAR_MONTH, YEAR_MONTH_FORMATTER);
-        YearMonth currentYearMonth = YearMonth.now();
-        YearMonth endYearMonth = currentYearMonth.plusMonths(2);
+        // 현재 월 ~ 현재+2개월 구간 수집 (이전에 추가 안 된 일정은 API 응답 기준으로 신규 저장됨)
+        YearMonth startYearMonth = YearMonth.now();
+        YearMonth endYearMonth = startYearMonth.plusMonths(2);
 
         int totalSaved = 0;
         YearMonth current = startYearMonth;
