@@ -54,8 +54,10 @@ public class EconomicEventServiceImpl implements EconomicEventService {
             List<TossInvestCalendarResponse.Event> events = response.getResult().getEvents();
 
             List<TossInvestCalendarResponse.Event> economicEvents = events.stream()
-                .filter(event -> event.getId() != null 
-                    && EVENT_GROUP_ECONOMIC.equals(event.getId().getGroup()))
+                .filter(event -> event.getId() != null
+                    && EVENT_GROUP_ECONOMIC.equals(event.getId().getGroup())
+                    && event.getId().getUniqueName() != null
+                    && !event.getId().getUniqueName().isBlank())
                 .toList();
 
             int savedCount = 0;
